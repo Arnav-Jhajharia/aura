@@ -1,9 +1,8 @@
 import Navbar from "@/components/Navbar";
 import Hero from "@/components/Hero";
-import Integrations from "@/components/Integrations";
-import HowItWorks from "@/components/HowItWorks";
-import Features from "@/components/Features";
-import Testimonials from "@/components/Testimonials";
+import DonnaTextsFirst from "@/components/DonnaTextsFirst";
+import HowDonnaWorks from "@/components/HowDonnaWorks";
+import Trust from "@/components/Trust";
 import Pricing from "@/components/Pricing";
 import FAQ from "@/components/FAQ";
 import FinalCTA from "@/components/FinalCTA";
@@ -15,10 +14,9 @@ export default function Home() {
     <OnboardingProvider>
       <Navbar />
       <Hero />
-      <Integrations />
-      <HowItWorks />
-      <Features />
-      <Testimonials />
+      <DonnaTextsFirst />
+      <HowDonnaWorks />
+      <Trust />
       <Pricing />
       <FAQ />
       <FinalCTA />

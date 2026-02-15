@@ -20,14 +20,6 @@ const FAQS = [
     q: "What if I forget to tell Donna something important?",
     a: "That's the beauty of it — you can connect your calendar, email, and other tools so Donna stays in the loop even when you forget. She reads the context so you don't have to remember every detail.",
   },
-  {
-    q: "Can I use Donna for work stuff?",
-    a: "Definitely. Many users use Donna for meeting follow-ups, project tracking, deadline reminders, and brainstorming. The Team plan adds shared knowledge and collaboration features for workgroups.",
-  },
-  {
-    q: "What happens if I cancel?",
-    a: "You can export all your data anytime. If you cancel your Pro subscription, you'll drop to the Free plan — your data stays safe, you just have lower message limits. We'll never hold your memories hostage.",
-  },
 ];
 
 function FAQItem({ item, isOpen, onToggle }: {
@@ -107,7 +99,7 @@ export default function FAQ() {
             Questions?
             <br />
             <em className="italic text-[var(--color-warm)]">
-              Donna has answers.
+              She&apos;s got answers.
             </em>
           </h2>
         </motion.div>

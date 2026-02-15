@@ -9,7 +9,7 @@ const PLANS = [
     name: "Free",
     price: "$0",
     period: "forever",
-    description: "For trying Donna out.",
+    description: "For students who forget things.",
     features: [
       "50 messages / month",
       "Basic recall",
@@ -23,33 +23,17 @@ const PLANS = [
     name: "Pro",
     price: "$8",
     period: "/ month",
-    description: "For people who think a lot.",
+    description: "For students who think too much.",
     features: [
       "Unlimited messages",
-      "Context-aware recall",
-      "Smart reminders",
-      "Unlimited memory",
-      "Calendar & email sync",
+      "Full memory — she never forgets",
+      "Smart proactive reminders",
+      "Calendar, Canvas & email sync",
+      "Voice note transcription",
       "Priority support",
     ],
     cta: "Try Donna Pro",
     highlighted: true,
-  },
-  {
-    name: "Team",
-    price: "$19",
-    period: "/ user / mo",
-    description: "For teams that share a brain.",
-    features: [
-      "Everything in Pro",
-      "Shared knowledge base",
-      "Team mentions & handoffs",
-      "Admin dashboard",
-      "SSO & compliance",
-      "Dedicated support",
-    ],
-    cta: "Contact us",
-    highlighted: false,
   },
 ];
 
@@ -90,7 +74,7 @@ export default function Pricing() {
         </h2>
       </motion.div>
 
-      <div className="max-w-[960px] mx-auto grid grid-cols-1 md:grid-cols-3 gap-5 items-start">
+      <div className="max-w-[800px] mx-auto grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
         {PLANS.map((plan, i) => (
           <motion.div
             key={plan.name}
@@ -101,7 +85,7 @@ export default function Pricing() {
               ease: "easeOut",
               delay: 0.12 * (i + 1),
             }}
-            className={`relative rounded-2xl border p-7 flex flex-col ${
+            className={`relative rounded-2xl border p-7 flex flex-col max-w-[380px] mx-auto w-full ${
               plan.highlighted
                 ? "border-[var(--color-warm)]/25 bg-[var(--color-warm)]/[0.03]"
                 : "border-white/[0.05] bg-white/[0.015]"

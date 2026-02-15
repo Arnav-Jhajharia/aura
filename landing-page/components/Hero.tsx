@@ -402,7 +402,7 @@ export default function Hero() {
           </h1>
 
           <p className="text-[16px] leading-[1.7] text-[var(--color-text-muted)] font-light max-w-[430px] mx-auto mb-10 animate-[fadeUp_1.2s_ease-out_0.7s_both]">
-            Every passing thought sinks into the noise of life. Donna catches them all — and surfaces the right one, right when you need it.
+            You dump 200 thoughts a day into the void. Donna catches every one — and texts you the right one at the right time, without being asked.
           </p>
 
           <div className="animate-[fadeUp_1.2s_ease-out_0.9s_both]">

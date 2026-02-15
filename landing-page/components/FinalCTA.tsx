@@ -41,19 +41,19 @@ export default function FinalCTA() {
             fontSize: "clamp(36px, 5vw, 60px)",
           }}
         >
-          Your next thought
+          Stop trusting
           <br />
+          your brain.{" "}
           <em className="italic text-[var(--color-warm)]">
-            deserves to be remembered.
+            Trust Donna.
           </em>
         </h2>
 
-        <p className="text-[16px] leading-[1.7] text-[var(--color-text-muted)] font-light max-w-[400px] mx-auto mb-10">
-          Stop trusting your brain with things that matter. Let Donna carry the
-          weight — so you can carry on.
+        <p className="text-[16px] leading-[1.7] text-[var(--color-text-muted)] font-light max-w-[440px] mx-auto mb-10">
+          Every idea you&apos;ve lost. Every deadline you&apos;ve missed. Every time you said &ldquo;I&apos;ll remember&rdquo; and didn&apos;t. That ends now.
         </p>
 
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+        <div className="flex flex-col items-center gap-4">
           <button
             onClick={openOnboarding}
             className="bg-[var(--color-warm)] text-[var(--color-bg-dark)] px-9 py-3.5 rounded-full text-[14px] font-medium tracking-[0.01em] hover:-translate-y-0.5 hover:shadow-[0_6px_30px_rgba(196,149,106,0.25)] transition-all cursor-pointer"
@@ -61,7 +61,10 @@ export default function FinalCTA() {
             Try Donna free
           </button>
           <span className="text-[12px] text-[var(--color-text-muted)] font-light">
-            No app download. Just WhatsApp.
+            No app download. No setup. Just WhatsApp.
+          </span>
+          <span className="text-[12px] text-[var(--color-warm)]/60 font-medium">
+            Free for students. Always.
           </span>
         </div>
       </motion.div>

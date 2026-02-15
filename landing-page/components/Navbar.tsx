@@ -17,7 +17,6 @@ export default function Navbar() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Close menu on anchor click
   function handleLink() {
     setMenuOpen(false);
   }
@@ -51,11 +50,11 @@ export default function Navbar() {
 
             {/* Desktop links */}
             <div className="hidden md:flex items-center gap-6">
-              <a href="#how-it-works" className="text-[13px] text-white/40 hover:text-white transition-colors whitespace-nowrap">
+              <a href="#how-donna-works" className="text-[13px] text-white/40 hover:text-white transition-colors whitespace-nowrap">
                 How it works
               </a>
-              <a href="#features" className="text-[13px] text-white/40 hover:text-white transition-colors whitespace-nowrap">
-                Features
+              <a href="#trust" className="text-[13px] text-white/40 hover:text-white transition-colors whitespace-nowrap">
+                Security
               </a>
               <a href="#pricing" className="text-[13px] text-white/40 hover:text-white transition-colors whitespace-nowrap">
                 Pricing
@@ -113,18 +112,18 @@ export default function Navbar() {
                 }}
               >
                 <a
-                  href="#how-it-works"
+                  href="#how-donna-works"
                   onClick={handleLink}
                   className="text-[15px] text-white/50 hover:text-white transition-colors"
                 >
                   How it works
                 </a>
                 <a
-                  href="#features"
+                  href="#trust"
                   onClick={handleLink}
                   className="text-[15px] text-white/50 hover:text-white transition-colors"
                 >
-                  Features
+                  Security
                 </a>
                 <a
                   href="#pricing"
