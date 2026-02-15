@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useEffect } from "react";
+import { useOnboarding } from "./OnboardingProvider";
 
 function useScrollUnderline() {
   const pathRef = useRef<SVGPathElement>(null);
@@ -66,6 +67,7 @@ export default function Hero() {
   const heroRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pathRef = useScrollUnderline();
+  const openOnboarding = useOnboarding();
 
   useEffect(() => {
     const hero = heroRef.current!;
@@ -404,7 +406,10 @@ export default function Hero() {
           </p>
 
           <div className="animate-[fadeUp_1.2s_ease-out_0.9s_both]">
-            <button className="bg-[var(--color-warm)] text-[var(--color-bg-dark)] px-9 py-3.5 rounded-full text-[14px] font-medium tracking-[0.01em] hover:-translate-y-0.5 hover:shadow-[0_6px_30px_rgba(196,149,106,0.25)] transition-all cursor-pointer">
+            <button
+              onClick={openOnboarding}
+              className="bg-[var(--color-warm)] text-[var(--color-bg-dark)] px-9 py-3.5 rounded-full text-[14px] font-medium tracking-[0.01em] hover:-translate-y-0.5 hover:shadow-[0_6px_30px_rgba(196,149,106,0.25)] transition-all cursor-pointer"
+            >
               Try Donna
             </button>
           </div>

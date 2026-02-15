@@ -2,10 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useOnboarding } from "./OnboardingProvider";
 
 export default function Navbar() {
   const [visible, setVisible] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const openOnboarding = useOnboarding();
 
   useEffect(() => {
     const onScroll = () => {
@@ -58,12 +60,12 @@ export default function Navbar() {
               <a href="#pricing" className="text-[13px] text-white/40 hover:text-white transition-colors whitespace-nowrap">
                 Pricing
               </a>
-              <a
-                href="#"
-                className="text-[13px] font-medium text-[var(--color-bg-dark)] bg-[var(--color-warm)] px-4 py-1.5 rounded-full hover:opacity-90 transition-opacity whitespace-nowrap"
+              <button
+                onClick={openOnboarding}
+                className="text-[13px] font-medium text-[var(--color-bg-dark)] bg-[var(--color-warm)] px-4 py-1.5 rounded-full hover:opacity-90 transition-opacity whitespace-nowrap cursor-pointer"
               >
                 Try Donna
-              </a>
+              </button>
             </div>
 
             {/* Mobile hamburger */}
@@ -131,13 +133,12 @@ export default function Navbar() {
                 >
                   Pricing
                 </a>
-                <a
-                  href="#"
-                  onClick={handleLink}
-                  className="text-[14px] font-medium text-[var(--color-bg-dark)] bg-[var(--color-warm)] px-5 py-2.5 rounded-full text-center hover:opacity-90 transition-opacity"
+                <button
+                  onClick={() => { handleLink(); openOnboarding(); }}
+                  className="text-[14px] font-medium text-[var(--color-bg-dark)] bg-[var(--color-warm)] px-5 py-2.5 rounded-full text-center hover:opacity-90 transition-opacity cursor-pointer w-full"
                 >
                   Try Donna
-                </a>
+                </button>
               </motion.div>
             )}
           </AnimatePresence>

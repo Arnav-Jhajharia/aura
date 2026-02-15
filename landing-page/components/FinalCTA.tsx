@@ -2,10 +2,12 @@
 
 import { useRef } from "react";
 import { motion, useInView } from "framer-motion";
+import { useOnboarding } from "./OnboardingProvider";
 
 export default function FinalCTA() {
   const ref = useRef(null);
   const inView = useInView(ref, { once: true, margin: "-15%" });
+  const openOnboarding = useOnboarding();
 
   return (
     <section ref={ref} className="relative w-full py-20 md:py-32 px-6">
@@ -52,7 +54,10 @@ export default function FinalCTA() {
         </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <button className="bg-[var(--color-warm)] text-[var(--color-bg-dark)] px-9 py-3.5 rounded-full text-[14px] font-medium tracking-[0.01em] hover:-translate-y-0.5 hover:shadow-[0_6px_30px_rgba(196,149,106,0.25)] transition-all cursor-pointer">
+          <button
+            onClick={openOnboarding}
+            className="bg-[var(--color-warm)] text-[var(--color-bg-dark)] px-9 py-3.5 rounded-full text-[14px] font-medium tracking-[0.01em] hover:-translate-y-0.5 hover:shadow-[0_6px_30px_rgba(196,149,106,0.25)] transition-all cursor-pointer"
+          >
             Try Donna free
           </button>
           <span className="text-[12px] text-[var(--color-text-muted)] font-light">

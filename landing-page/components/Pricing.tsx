@@ -2,6 +2,7 @@
 
 import { useRef } from "react";
 import { motion, useInView } from "framer-motion";
+import { useOnboarding } from "./OnboardingProvider";
 
 const PLANS = [
   {
@@ -55,6 +56,7 @@ const PLANS = [
 export default function Pricing() {
   const ref = useRef(null);
   const inView = useInView(ref, { once: true, margin: "-15%" });
+  const openOnboarding = useOnboarding();
 
   return (
     <section ref={ref} id="pricing" className="relative w-full py-20 md:py-32 px-6">
@@ -157,6 +159,7 @@ export default function Pricing() {
             </ul>
 
             <button
+              onClick={openOnboarding}
               className={`w-full py-3 rounded-full text-[13px] font-medium tracking-[0.01em] transition-all cursor-pointer ${
                 plan.highlighted
                   ? "bg-[var(--color-warm)] text-[var(--color-bg-dark)] hover:shadow-[0_6px_30px_rgba(196,149,106,0.2)] hover:-translate-y-0.5"

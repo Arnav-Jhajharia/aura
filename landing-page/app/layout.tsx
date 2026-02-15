@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import SmoothScroll from "@/components/SmoothScroll";
 
 export const metadata: Metadata = {
   title: "Donna — Your Second Brain on WhatsApp",
@@ -22,7 +23,9 @@ export default function RootLayout({
         />
       </head>
       <body>
-        {children}
+        <SmoothScroll>
+          {children}
+        </SmoothScroll>
         <div className="grain" />
       </body>
     </html>
