@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, func
 
-from db.models import ChatMessage, MoodLog, Task, User
+from db.models import ChatMessage, Habit, MemoryFact, MoodLog, Task, User
 from db.session import async_session
 from donna.signals.base import Signal, SignalType
 
@@ -145,5 +145,79 @@ async def collect_internal_signals(user_id: str) -> list[Signal]:
                     "source": task.source,
                 },
             ))
+
+        # ── Habit streak at risk ────────────────────────────────────
+        habit_result = await session.execute(
+            select(Habit).where(Habit.user_id == user_id)
+        )
+        habits = habit_result.scalars().all()
+
+        for habit in habits:
+            if not habit.last_logged:
+                continue
+            last_logged = habit.last_logged.replace(tzinfo=timezone.utc)
+            hours_since_logged = (now - last_logged).total_seconds() / 3600
+
+            if habit.target_frequency == "daily" and hours_since_logged >= 20:
+                signals.append(Signal(
+                    type=SignalType.HABIT_STREAK_AT_RISK,
+                    user_id=user_id,
+                    data={
+                        "habit_name": habit.name,
+                        "current_streak": habit.current_streak,
+                        "hours_since_logged": round(hours_since_logged, 1),
+                    },
+                ))
+            elif habit.target_frequency == "weekly" and hours_since_logged >= 144:  # 6 days
+                signals.append(Signal(
+                    type=SignalType.HABIT_STREAK_AT_RISK,
+                    user_id=user_id,
+                    data={
+                        "habit_name": habit.name,
+                        "current_streak": habit.current_streak,
+                        "hours_since_logged": round(hours_since_logged, 1),
+                    },
+                ))
+
+            # Milestone check
+            if habit.current_streak > 0 and habit.current_streak % 7 == 0:
+                signals.append(Signal(
+                    type=SignalType.HABIT_STREAK_MILESTONE,
+                    user_id=user_id,
+                    data={
+                        "habit_name": habit.name,
+                        "current_streak": habit.current_streak,
+                    },
+                ))
+
+        # ── Memory relevance window ────────────────────────────────
+        # Check entity:event and entity:place facts that might be relevant now
+        # (e.g., Friday evening + empty calendar + restaurant memory)
+        day_name = now.strftime("%A").lower()
+        is_evening = 17 <= current_hour <= 21
+        is_weekend = day_name in ("friday", "saturday", "sunday")
+
+        if is_evening or is_weekend:
+            event_facts = await session.execute(
+                select(MemoryFact)
+                .where(
+                    MemoryFact.user_id == user_id,
+                    MemoryFact.category.in_(["entity:place", "entity:event"]),
+                )
+                .order_by(MemoryFact.created_at.desc())
+                .limit(5)
+            )
+            relevant_facts = event_facts.scalars().all()
+            if relevant_facts:
+                signals.append(Signal(
+                    type=SignalType.MEMORY_RELEVANCE_WINDOW,
+                    user_id=user_id,
+                    data={
+                        "reason": "evening/weekend + stored place/event memories",
+                        "facts": [f.fact for f in relevant_facts[:3]],
+                        "is_evening": is_evening,
+                        "is_weekend": is_weekend,
+                    },
+                ))
 
     return signals

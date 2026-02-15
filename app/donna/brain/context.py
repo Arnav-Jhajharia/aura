@@ -7,6 +7,8 @@ from sqlalchemy import select
 
 from db.models import ChatMessage, Expense, MemoryFact, MoodLog, Task, User
 from db.session import async_session
+from donna.brain.rules import count_proactive_today
+from donna.memory.recall import recall_relevant_memories
 from donna.signals.base import Signal
 
 logger = logging.getLogger(__name__)
@@ -139,5 +141,20 @@ async def build_context(user_id: str, signals: list[Signal]) -> dict:
         )
         expenses = expense_result.scalars().all()
         context["today_spending"] = round(sum(e.amount for e in expenses), 2)
+
+    # ── Daily proactive message count ─────────────────────────────
+    try:
+        context["proactive_sent_today"] = await count_proactive_today(user_id)
+    except Exception:
+        logger.exception("Failed to count proactive messages for user %s", user_id)
+        context["proactive_sent_today"] = 0
+
+    # ── Recalled memories (semantic search) ─────────────────────────
+    try:
+        recalled = await recall_relevant_memories(user_id, context)
+        context["recalled_memories"] = recalled
+    except Exception:
+        logger.exception("Memory recall failed for user %s", user_id)
+        context["recalled_memories"] = []
 
     return context

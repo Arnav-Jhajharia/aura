@@ -8,6 +8,7 @@ from agent.state import AuraState
 from config import settings
 from db.models import ChatMessage, MemoryFact, generate_uuid
 from db.session import async_session
+from donna.memory.entities import extract_entities
 from tools.whatsapp import send_whatsapp_message
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,13 @@ async def memory_writer(state: AuraState) -> dict:
 
         except Exception:
             logger.exception("Failed to extract/store memory facts")
+
+    # Extract structured entities from the user's message
+    if text:
+        try:
+            await extract_entities(user_id, text)
+        except Exception:
+            logger.exception("Entity extraction failed for user %s", user_id)
 
     # Send response to WhatsApp
     if response:

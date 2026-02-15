@@ -42,6 +42,13 @@ class SignalType(str, Enum):
     TASK_OVERDUE = "task_overdue"
     TASK_DUE_TODAY = "task_due_today"
 
+    # Memory
+    MEMORY_RELEVANCE_WINDOW = "memory_relevance_window"
+
+    # Habits
+    HABIT_STREAK_AT_RISK = "habit_streak_at_risk"
+    HABIT_STREAK_MILESTONE = "habit_streak_milestone"
+
 
 @dataclass
 class Signal:
@@ -65,6 +72,8 @@ class Signal:
             SignalType.TASK_DUE_TODAY,
             SignalType.MOOD_TREND_DOWN,
             SignalType.EMAIL_UNREAD_PILING,
+            SignalType.HABIT_STREAK_AT_RISK,
+            SignalType.MEMORY_RELEVANCE_WINDOW,
         }
         if self.type in high:
             return 8

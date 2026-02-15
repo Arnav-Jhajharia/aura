@@ -1,7 +1,13 @@
 """Scorer and filter — applies hard rules and soft scoring to candidates."""
 
 import logging
-from datetime import datetime, timezone
+import zoneinfo
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import select, func
+
+from db.models import ChatMessage
+from db.session import async_session
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +23,16 @@ MAX_PROACTIVE_PER_DAY = 4      # max proactive messages per day
 URGENT_SCORE_OVERRIDE = 8.5    # bypass cooldown if score is this high
 
 
+def _get_local_hour(user: dict) -> int:
+    """Get current hour in the user's timezone."""
+    tz_name = user.get("timezone", "UTC")
+    try:
+        tz = zoneinfo.ZoneInfo(tz_name)
+    except (KeyError, zoneinfo.ZoneInfoNotFoundError):
+        tz = timezone.utc
+    return datetime.now(tz).hour
+
+
 def score_and_filter(candidates: list[dict], context: dict) -> list[dict]:
     """Score candidates, apply hard rules, return approved messages sorted by score.
 
@@ -28,9 +44,9 @@ def score_and_filter(candidates: list[dict], context: dict) -> list[dict]:
     user = context.get("user", {})
     minutes_since_last = context.get("minutes_since_last_message")
 
-    # ── Hard rule: quiet hours ───────────────────────────────────────
+    # ── Hard rule: quiet hours (in user's timezone) ────────────────
     now = datetime.now(timezone.utc)
-    current_hour = now.hour  # TODO: convert to user's timezone
+    current_hour = _get_local_hour(user)
 
     wake_hour = int((user.get("wake_time") or "08:00").split(":")[0])
     sleep_hour = int((user.get("sleep_time") or "23:00").split(":")[0])
@@ -42,6 +58,16 @@ def score_and_filter(candidates: list[dict], context: dict) -> list[dict]:
     else:
         # Wraps midnight: wake 10, sleep 2 → quiet = [2, 10)
         in_quiet_hours = sleep_hour <= current_hour < wake_hour
+
+    # ── Check daily cap from DB ────────────────────────────────────
+    sent_today = context.get("proactive_sent_today", 0)
+
+    # ── Recent assistant messages for dedup ─────────────────────────
+    recent_messages = [
+        m["content"].lower()
+        for m in context.get("recent_conversation", [])
+        if m.get("role") == "assistant"
+    ]
 
     scored: list[dict] = []
 
@@ -77,14 +103,30 @@ def score_and_filter(candidates: list[dict], context: dict) -> list[dict]:
                 )
                 continue
 
+        # ── Filter: dedup (skip if similar to recent assistant message) ──
+        candidate_lower = candidate["message"].lower()
+        candidate_words = set(candidate_lower.split())
+        is_duplicate = False
+        for recent in recent_messages:
+            recent_words = set(recent.split())
+            if not candidate_words or not recent_words:
+                continue
+            overlap = len(candidate_words & recent_words) / max(len(candidate_words), 1)
+            if overlap > 0.6:
+                logger.debug("Filtered (dedup %.0f%% overlap): %s", overlap * 100, candidate["message"][:50])
+                is_duplicate = True
+                break
+        if is_duplicate:
+            continue
+
         scored.append(candidate)
 
     # Sort by composite score descending
     scored.sort(key=lambda c: c["composite_score"], reverse=True)
 
     # ── Hard rule: daily cap ─────────────────────────────────────────
-    # TODO: track actual messages sent today in DB; for now just cap the batch
-    scored = scored[:MAX_PROACTIVE_PER_DAY]
+    remaining_cap = max(0, MAX_PROACTIVE_PER_DAY - sent_today)
+    scored = scored[:remaining_cap]
 
     if scored:
         logger.info(
@@ -96,3 +138,20 @@ def score_and_filter(candidates: list[dict], context: dict) -> list[dict]:
         )
 
     return scored
+
+
+async def count_proactive_today(user_id: str) -> int:
+    """Count how many proactive (assistant) messages were sent today."""
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(func.count(ChatMessage.id))
+            .where(
+                ChatMessage.user_id == user_id,
+                ChatMessage.role == "assistant",
+                ChatMessage.created_at >= today_start,
+            )
+        )
+        return result.scalar_one()
