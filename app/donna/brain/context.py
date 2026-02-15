@@ -27,7 +27,7 @@ async def build_context(user_id: str, signals: list[Signal]) -> dict:
     - today's spending
     - current time info
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     context: dict = {
         "user_id": user_id,
@@ -84,7 +84,7 @@ async def build_context(user_id: str, signals: list[Signal]) -> dict:
         last_donna = last_donna_result.scalar_one_or_none()
         if last_donna:
             context["minutes_since_last_message"] = round(
-                (now - last_donna.replace(tzinfo=timezone.utc)).total_seconds() / 60, 1
+                (now - last_donna).total_seconds() / 60, 1
             )
         else:
             context["minutes_since_last_message"] = None

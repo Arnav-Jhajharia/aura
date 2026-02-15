@@ -10,6 +10,7 @@ from sqlalchemy import text
 
 from api.webhook import router as webhook_router
 from api.auth import router as auth_router
+from api.onboard import router as onboard_router
 from agent.graph import build_graph
 from agent.scheduler import start_scheduler, scheduler
 from db.models import Base
@@ -75,6 +76,7 @@ app.add_middleware(
 
 app.include_router(webhook_router)
 app.include_router(auth_router, prefix="/auth")
+app.include_router(onboard_router, prefix="/onboard")
 
 
 @app.get("/health")

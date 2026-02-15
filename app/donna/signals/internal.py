@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 async def collect_internal_signals(user_id: str) -> list[Signal]:
     """Generate signals from internal state: time, mood, tasks, interaction gaps."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     signals: list[Signal] = []
 
     async with async_session() as session:
@@ -52,7 +52,7 @@ async def collect_internal_signals(user_id: str) -> list[Signal]:
         )
         last_msg_row = last_msg_result.scalar_one_or_none()
         if last_msg_row:
-            hours_since = (now - last_msg_row.replace(tzinfo=timezone.utc)).total_seconds() / 3600
+            hours_since = (now - last_msg_row).total_seconds() / 3600
             if hours_since >= 6:
                 signals.append(Signal(
                     type=SignalType.TIME_SINCE_LAST_INTERACTION,
@@ -114,7 +114,7 @@ async def collect_internal_signals(user_id: str) -> list[Signal]:
                     "title": task.title,
                     "due_date": task.due_date.isoformat(),
                     "hours_overdue": round(
-                        (now - task.due_date.replace(tzinfo=timezone.utc)).total_seconds() / 3600, 1
+                        (now - task.due_date).total_seconds() / 3600, 1
                     ),
                     "priority": task.priority,
                     "source": task.source,
@@ -155,7 +155,7 @@ async def collect_internal_signals(user_id: str) -> list[Signal]:
         for habit in habits:
             if not habit.last_logged:
                 continue
-            last_logged = habit.last_logged.replace(tzinfo=timezone.utc)
+            last_logged = habit.last_logged
             hours_since_logged = (now - last_logged).total_seconds() / 3600
 
             if habit.target_frequency == "daily" and hours_since_logged >= 20:

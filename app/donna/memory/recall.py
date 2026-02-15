@@ -101,7 +101,7 @@ async def recall_relevant_memories(user_id: str, context: dict, limit: int = 10)
 
         # Update last_referenced on recalled facts
         if seen_ids:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
             for fact_id in seen_ids:
                 await session.execute(
                     select(MemoryFact).where(MemoryFact.id == fact_id)

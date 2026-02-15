@@ -45,7 +45,6 @@ def score_and_filter(candidates: list[dict], context: dict) -> list[dict]:
     minutes_since_last = context.get("minutes_since_last_message")
 
     # ── Hard rule: quiet hours (in user's timezone) ────────────────
-    datetime.now(timezone.utc)
     current_hour = _get_local_hour(user)
 
     wake_hour = int((user.get("wake_time") or "08:00").split(":")[0])
@@ -142,7 +141,7 @@ def score_and_filter(candidates: list[dict], context: dict) -> list[dict]:
 
 async def count_proactive_today(user_id: str) -> int:
     """Count how many proactive (assistant) messages were sent today."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     async with async_session() as session:
