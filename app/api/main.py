@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
 
     # Initialize LangGraph Postgres checkpointer
     try:
-        pool = AsyncConnectionPool(conninfo=settings.database_url_direct, open=False, max_size=3)
+        pool = AsyncConnectionPool(conninfo=settings.database_url_direct, open=False, min_size=1, max_size=3)
         await pool.open()
         checkpointer = AsyncPostgresSaver(pool)
         # setup() uses CREATE INDEX CONCURRENTLY which cannot run in a transaction;
