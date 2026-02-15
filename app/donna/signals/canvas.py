@@ -1,0 +1,78 @@
+"""Canvas signal collector — checks assignments and deadlines."""
+
+import logging
+from datetime import datetime, timedelta, timezone
+
+from donna.signals.base import Signal, SignalType
+from tools.canvas import get_canvas_assignments
+
+logger = logging.getLogger(__name__)
+
+# Deadline thresholds in hours
+_DEADLINE_THRESHOLDS = [
+    (3, "3_hours"),
+    (12, "12_hours"),
+    (24, "1_day"),
+    (48, "2_days"),
+    (72, "3_days"),
+]
+
+
+async def collect_canvas_signals(user_id: str) -> list[Signal]:
+    """Generate signals from Canvas assignments."""
+    now = datetime.now(timezone.utc)
+    signals: list[Signal] = []
+
+    # Fetch assignments due in next 14 days (wide window for context)
+    assignments = await get_canvas_assignments(user_id=user_id, days_ahead=14)
+
+    if assignments and isinstance(assignments[0], dict) and "error" in assignments[0]:
+        return []
+
+    for assignment in assignments:
+        due_str = assignment.get("due_date")
+        if not due_str:
+            continue
+
+        try:
+            due_dt = datetime.fromisoformat(due_str.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+
+        hours_until = (due_dt - now).total_seconds() / 3600
+        submitted = assignment.get("submitted", False)
+
+        # ── Overdue and not submitted ────────────────────────────────
+        if hours_until < 0 and not submitted:
+            signals.append(Signal(
+                type=SignalType.CANVAS_OVERDUE,
+                user_id=user_id,
+                data={
+                    "title": assignment.get("title", ""),
+                    "course": assignment.get("course", ""),
+                    "due_date": due_str,
+                    "hours_overdue": round(abs(hours_until), 1),
+                    "points": assignment.get("points"),
+                },
+            ))
+            continue
+
+        # ── Approaching deadline (not submitted) ─────────────────────
+        if not submitted and hours_until > 0:
+            for threshold_hours, label in _DEADLINE_THRESHOLDS:
+                if hours_until <= threshold_hours:
+                    signals.append(Signal(
+                        type=SignalType.CANVAS_DEADLINE_APPROACHING,
+                        user_id=user_id,
+                        data={
+                            "title": assignment.get("title", ""),
+                            "course": assignment.get("course", ""),
+                            "due_date": due_str,
+                            "hours_until": round(hours_until, 1),
+                            "urgency_label": label,
+                            "points": assignment.get("points"),
+                        },
+                    ))
+                    break  # only emit the tightest threshold
+
+    return signals

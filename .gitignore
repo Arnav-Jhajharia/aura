@@ -1,0 +1,11 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.claude/
+*.egg-info/
+dist/
+build/
+.ruff_cache/
+node_modules/
+.next/

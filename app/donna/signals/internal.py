@@ -1,0 +1,149 @@
+"""Internal signal collector — time-based and DB-derived signals."""
+
+import logging
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import select, func
+
+from db.models import ChatMessage, MoodLog, Task, User
+from db.session import async_session
+from donna.signals.base import Signal, SignalType
+
+logger = logging.getLogger(__name__)
+
+
+async def collect_internal_signals(user_id: str) -> list[Signal]:
+    """Generate signals from internal state: time, mood, tasks, interaction gaps."""
+    now = datetime.now(timezone.utc)
+    signals: list[Signal] = []
+
+    async with async_session() as session:
+        # ── Load user profile ────────────────────────────────────────
+        user_result = await session.execute(select(User).where(User.id == user_id))
+        user = user_result.scalar_one_or_none()
+        if not user:
+            return []
+
+        wake_hour = int((user.wake_time or "08:00").split(":")[0])
+        sleep_hour = int((user.sleep_time or "23:00").split(":")[0])
+        current_hour = now.hour  # NOTE: should be user's local time; using UTC for now
+
+        # ── Morning / evening window ─────────────────────────────────
+        if abs(current_hour - wake_hour) <= 1:
+            signals.append(Signal(
+                type=SignalType.TIME_MORNING_WINDOW,
+                user_id=user_id,
+                data={"wake_time": user.wake_time, "user_name": user.name or ""},
+            ))
+
+        if abs(current_hour - sleep_hour) <= 1:
+            signals.append(Signal(
+                type=SignalType.TIME_EVENING_WINDOW,
+                user_id=user_id,
+                data={"sleep_time": user.sleep_time, "user_name": user.name or ""},
+            ))
+
+        # ── Time since last interaction ──────────────────────────────
+        last_msg_result = await session.execute(
+            select(ChatMessage.created_at)
+            .where(ChatMessage.user_id == user_id, ChatMessage.role == "user")
+            .order_by(ChatMessage.created_at.desc())
+            .limit(1)
+        )
+        last_msg_row = last_msg_result.scalar_one_or_none()
+        if last_msg_row:
+            hours_since = (now - last_msg_row.replace(tzinfo=timezone.utc)).total_seconds() / 3600
+            if hours_since >= 6:
+                signals.append(Signal(
+                    type=SignalType.TIME_SINCE_LAST_INTERACTION,
+                    user_id=user_id,
+                    data={"hours_since": round(hours_since, 1)},
+                ))
+
+        # ── Mood trend (last 7 days) ─────────────────────────────────
+        seven_days_ago = now - timedelta(days=7)
+        mood_result = await session.execute(
+            select(MoodLog)
+            .where(MoodLog.user_id == user_id, MoodLog.created_at >= seven_days_ago)
+            .order_by(MoodLog.created_at.asc())
+        )
+        moods = mood_result.scalars().all()
+
+        if len(moods) >= 3:
+            scores = [m.score for m in moods]
+            recent_avg = sum(scores[-3:]) / 3
+            overall_avg = sum(scores) / len(scores)
+
+            if recent_avg <= 4 and recent_avg < overall_avg - 1:
+                signals.append(Signal(
+                    type=SignalType.MOOD_TREND_DOWN,
+                    user_id=user_id,
+                    data={
+                        "recent_avg": round(recent_avg, 1),
+                        "overall_avg": round(overall_avg, 1),
+                        "last_score": scores[-1],
+                        "days_tracked": len(moods),
+                    },
+                ))
+            elif recent_avg >= 7 and recent_avg > overall_avg + 1:
+                signals.append(Signal(
+                    type=SignalType.MOOD_TREND_UP,
+                    user_id=user_id,
+                    data={
+                        "recent_avg": round(recent_avg, 1),
+                        "overall_avg": round(overall_avg, 1),
+                        "last_score": scores[-1],
+                    },
+                ))
+
+        # ── Overdue tasks ────────────────────────────────────────────
+        overdue_result = await session.execute(
+            select(Task).where(
+                Task.user_id == user_id,
+                Task.status == "pending",
+                Task.due_date.isnot(None),
+                Task.due_date < now,
+            )
+        )
+        overdue_tasks = overdue_result.scalars().all()
+        for task in overdue_tasks:
+            signals.append(Signal(
+                type=SignalType.TASK_OVERDUE,
+                user_id=user_id,
+                data={
+                    "title": task.title,
+                    "due_date": task.due_date.isoformat(),
+                    "hours_overdue": round(
+                        (now - task.due_date.replace(tzinfo=timezone.utc)).total_seconds() / 3600, 1
+                    ),
+                    "priority": task.priority,
+                    "source": task.source,
+                },
+            ))
+
+        # ── Tasks due today ──────────────────────────────────────────
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
+        due_today_result = await session.execute(
+            select(Task).where(
+                Task.user_id == user_id,
+                Task.status == "pending",
+                Task.due_date.isnot(None),
+                Task.due_date >= now,
+                Task.due_date < today_end,
+            )
+        )
+        due_today = due_today_result.scalars().all()
+        for task in due_today:
+            signals.append(Signal(
+                type=SignalType.TASK_DUE_TODAY,
+                user_id=user_id,
+                data={
+                    "title": task.title,
+                    "due_date": task.due_date.isoformat(),
+                    "priority": task.priority,
+                    "source": task.source,
+                },
+            ))
+
+    return signals

@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg-dark: #080B0F;
+  --color-warm: #C4956A;
+  --color-text-primary: #F2EDE7;
+  --color-text-muted: rgba(242, 237, 231, 0.35);
+  --color-text-dim: rgba(242, 237, 231, 0.15);
+  --font-serif: 'Instrument Serif', serif;
+  --font-sans: 'DM Sans', sans-serif;
+}
+
+@layer base {
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--color-bg-dark);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    overflow-x: hidden;
+  }
+
+  /* Grain overlay */
+  .grain {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    pointer-events: none;
+    opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+    background-size: 256px 256px;
+  }
+
+  /* Cursive underline SVG */
+  .cursive-underline {
+    position: relative;
+    display: inline-block;
+  }
+
+  .cursive-underline-svg {
+    position: absolute;
+    bottom: -2px;
+    left: -4px;
+    width: calc(100% + 8px);
+    height: auto;
+    pointer-events: none;
+    overflow: visible;
+  }
+
+  /* stroke-dasharray/dashoffset driven by scroll in Hero.tsx */
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
