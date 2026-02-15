@@ -8,7 +8,7 @@ export default function FinalCTA() {
   const inView = useInView(ref, { once: true, margin: "-15%" });
 
   return (
-    <section ref={ref} className="relative w-full py-32 px-6">
+    <section ref={ref} className="relative w-full py-20 md:py-32 px-6">
       <div
         className="absolute top-0 left-1/2 -translate-x-1/2 w-[200px] h-px"
         style={{

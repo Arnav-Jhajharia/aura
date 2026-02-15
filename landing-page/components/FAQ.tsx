@@ -78,7 +78,7 @@ export default function FAQ() {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   return (
-    <section ref={ref} id="faq" className="relative w-full py-32 px-6">
+    <section ref={ref} id="faq" className="relative w-full py-20 md:py-32 px-6">
       <div
         className="absolute top-0 left-1/2 -translate-x-1/2 w-[200px] h-px"
         style={{

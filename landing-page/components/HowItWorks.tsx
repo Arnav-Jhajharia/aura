@@ -72,7 +72,7 @@ export default function HowItWorks() {
     <section
       ref={ref}
       id="how-it-works"
-      className="relative w-full py-32 px-6"
+      className="relative w-full py-20 md:py-32 px-6"
     >
       {/* Subtle top divider */}
       <div
@@ -87,7 +87,7 @@ export default function HowItWorks() {
         initial={{ opacity: 0, y: 24 }}
         animate={inView ? { opacity: 1, y: 0 } : {}}
         transition={{ duration: 0.7, ease: "easeOut" }}
-        className="text-center mb-20"
+        className="text-center mb-14 md:mb-20"
       >
         <p className="text-[10px] uppercase tracking-[4px] text-[var(--color-warm)] font-medium mb-5">
           How it works
@@ -105,7 +105,7 @@ export default function HowItWorks() {
         </h2>
       </motion.div>
 
-      <div className="max-w-[1040px] mx-auto flex flex-col gap-24">
+      <div className="max-w-[1040px] mx-auto flex flex-col gap-16 md:gap-24">
         {STEPS.map((step, i) => (
           <motion.div
             key={step.number}
@@ -116,14 +116,14 @@ export default function HowItWorks() {
               ease: "easeOut",
               delay: 0.15 * (i + 1),
             }}
-            className={`flex items-center gap-16 ${
-              i % 2 === 1 ? "flex-row-reverse" : ""
-            } max-md:flex-col max-md:gap-8`}
+            className={`flex items-center gap-10 md:gap-16 ${
+              i % 2 === 1 ? "md:flex-row-reverse" : ""
+            } flex-col md:flex-row`}
           >
             {/* Text side */}
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 text-center md:text-left">
               <span
-                className="block text-[48px] font-light leading-none mb-4"
+                className="block text-[36px] md:text-[48px] font-light leading-none mb-4"
                 style={{
                   fontFamily: "var(--font-serif)",
                   color: "rgba(196,149,106,0.15)",
@@ -132,12 +132,12 @@ export default function HowItWorks() {
                 {step.number}
               </span>
               <h3
-                className="text-[28px] font-normal leading-[1.2] tracking-[-0.01em] text-[var(--color-text-primary)] mb-3"
+                className="text-[24px] md:text-[28px] font-normal leading-[1.2] tracking-[-0.01em] text-[var(--color-text-primary)] mb-3"
                 style={{ fontFamily: "var(--font-serif)" }}
               >
                 {step.title}
               </h3>
-              <p className="text-[15px] leading-[1.7] text-[var(--color-text-muted)] font-light max-w-[380px]">
+              <p className="text-[15px] leading-[1.7] text-[var(--color-text-muted)] font-light max-w-[380px] mx-auto md:mx-0">
                 {step.description}
               </p>
             </div>

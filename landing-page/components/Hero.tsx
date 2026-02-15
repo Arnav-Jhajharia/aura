@@ -363,7 +363,7 @@ export default function Hero() {
       <div className="absolute inset-0 z-10 flex flex-col items-center justify-center pointer-events-none">
         <div className="text-center max-w-[660px] px-6 pointer-events-auto relative">
           {/* Radial bg for readability */}
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[480px] pointer-events-none -z-10"
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(700px,95vw)] h-[480px] pointer-events-none -z-10"
             style={{ background: "radial-gradient(ellipse, rgba(8,11,15,0.93) 0%, rgba(8,11,15,0.6) 40%, transparent 68%)" }}
           />
 

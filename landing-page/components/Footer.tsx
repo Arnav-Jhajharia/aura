@@ -34,7 +34,7 @@ export default function Footer() {
           </div>
 
           {/* Link columns */}
-          <div className="flex gap-16 flex-wrap">
+          <div className="flex gap-10 md:gap-16 flex-wrap">
             {Object.entries(LINKS).map(([heading, items]) => (
               <div key={heading}>
                 <h4 className="text-[11px] uppercase tracking-[2px] text-[var(--color-text-muted)] font-medium mb-4">

@@ -13,7 +13,7 @@ export default function Integrations() {
     <section
       ref={ref}
       id="integrations"
-      className="relative w-full min-h-screen flex items-center justify-center px-15 py-25 gap-15"
+      className="relative w-full min-h-screen flex flex-col md:flex-row items-center justify-center px-6 md:px-15 py-20 md:py-25 gap-10 md:gap-15"
       style={{ background: "var(--color-bg-dark)" }}
     >
       {/* Text left */}
@@ -21,7 +21,7 @@ export default function Integrations() {
         initial={{ opacity: 0, y: 30 }}
         animate={inView ? { opacity: 1, y: 0 } : {}}
         transition={{ duration: 0.8, ease: "easeOut" }}
-        className="max-w-[440px] shrink-0 text-left"
+        className="max-w-[440px] shrink-0 text-center md:text-left"
       >
         <h2
           className="font-normal leading-[1.1] tracking-[-0.02em] text-[var(--color-text-primary)] mb-5"
@@ -30,7 +30,7 @@ export default function Integrations() {
           It all starts with<br />
           <em className="italic text-[var(--color-warm)]">integrations.</em>
         </h2>
-        <p className="text-[16px] leading-[1.7] text-[var(--color-text-muted)] font-light max-w-[400px]">
+        <p className="text-[16px] leading-[1.7] text-[var(--color-text-muted)] font-light max-w-[400px] mx-auto md:mx-0">
           Donna plugs into the tools you already use — your calendar, your courses, your inbox. She reads them so you don&apos;t have to.
         </p>
       </motion.div>
