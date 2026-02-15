@@ -5,17 +5,15 @@ Patches `async_session` in all modules that import it so production code
 transparently hits the test DB instead of Postgres.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from unittest.mock import patch
 
-import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from db.models import (
     Base,
     ChatMessage,
-    Expense,
     Habit,
     MemoryFact,
     MoodLog,

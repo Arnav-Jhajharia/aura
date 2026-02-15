@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
-from sqlalchemy import select, or_
+from sqlalchemy import select
 
 from config import settings
 from db.models import MemoryFact

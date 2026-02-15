@@ -1,7 +1,7 @@
 """Calendar signal collector — polls Google Calendar via Composio."""
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from donna.signals.base import Signal, SignalType
 from tools.calendar import get_calendar_events

@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from db.models import ChatMessage, Habit, MemoryFact, MoodLog, Task, User
 from db.session import async_session

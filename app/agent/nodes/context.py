@@ -6,10 +6,10 @@ from sqlalchemy import select
 from agent.state import AuraState
 from config import settings
 from db.models import ChatMessage, Expense, MemoryFact, MoodLog, OAuthToken, Task
-
-HISTORY_WINDOW = 10  # last 10 messages (5 user + 5 assistant turns)
 from db.session import async_session
 from tools.composio_client import get_connected_integrations
+
+HISTORY_WINDOW = 10  # last 10 messages (5 user + 5 assistant turns)
 
 logger = logging.getLogger(__name__)
 

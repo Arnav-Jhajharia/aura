@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-from datetime import datetime, timezone
 
 from donna.signals.base import Signal
 from donna.signals.calendar import collect_calendar_signals

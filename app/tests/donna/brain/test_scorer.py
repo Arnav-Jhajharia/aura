@@ -1,13 +1,9 @@
 """Tests for donna.brain.rules — scoring and filtering logic."""
 
 import unittest.mock as mock
-from datetime import datetime, timezone
 
 import pytest
 from donna.brain.rules import (
-    COOLDOWN_MINUTES,
-    SCORE_THRESHOLD,
-    URGENT_SCORE_OVERRIDE,
     W_RELEVANCE,
     W_TIMING,
     W_URGENCY,

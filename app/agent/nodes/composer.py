@@ -72,7 +72,7 @@ async def response_composer(state: AuraState) -> dict:
         for msg in history:
             prefix = "User" if msg["role"] == "user" else "Donna"
             lines.append(f"{prefix}: {msg['content']}")
-        parts.append(f"Recent conversation:\n" + "\n".join(lines))
+        parts.append("Recent conversation:\n" + "\n".join(lines))
 
     parts.append(f"User message: {text}")
     parts.append(f"Intent: {intent}")

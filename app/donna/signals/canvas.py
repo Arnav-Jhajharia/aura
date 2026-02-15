@@ -1,7 +1,7 @@
 """Canvas signal collector — checks assignments and deadlines."""
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from donna.signals.base import Signal, SignalType
 from tools.canvas import get_canvas_assignments

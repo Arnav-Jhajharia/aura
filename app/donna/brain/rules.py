@@ -2,7 +2,7 @@
 
 import logging
 import zoneinfo
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from sqlalchemy import select, func
 
@@ -45,7 +45,7 @@ def score_and_filter(candidates: list[dict], context: dict) -> list[dict]:
     minutes_since_last = context.get("minutes_since_last_message")
 
     # ── Hard rule: quiet hours (in user's timezone) ────────────────
-    now = datetime.now(timezone.utc)
+    datetime.now(timezone.utc)
     current_hour = _get_local_hour(user)
 
     wake_hour = int((user.get("wake_time") or "08:00").split(":")[0])

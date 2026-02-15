@@ -9,9 +9,7 @@ import unittest.mock as mock
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
-import pytest
 
-from donna.brain.rules import COOLDOWN_MINUTES, MAX_PROACTIVE_PER_DAY
 from donna.loop import donna_loop
 from donna.signals.base import Signal, SignalType
 from tests.conftest import (
@@ -165,7 +163,7 @@ class TestDonnaScenarios:
             patch("donna.brain.candidates.llm", _mock_llm_response(candidates)),
             patch("donna.memory.recall.llm", _mock_llm_response([])),
             _patch_daytime(14),
-            patch("donna.brain.sender.send_whatsapp_message", new_callable=AsyncMock) as mock_wa,
+            patch("donna.brain.sender.send_whatsapp_message", new_callable=AsyncMock),
         ):
             sent = await donna_loop("s-mood")
 

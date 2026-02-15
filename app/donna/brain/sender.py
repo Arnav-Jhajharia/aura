@@ -1,7 +1,6 @@
 """Sender — delivers approved messages via WhatsApp and logs them."""
 
 import logging
-from datetime import datetime, timezone
 
 from sqlalchemy import select
 

@@ -1,9 +1,7 @@
 import logging
 
-import httpx
 from sqlalchemy import select
 
-from config import settings
 from db.models import VoiceNote
 from db.session import async_session
 
