@@ -28,7 +28,7 @@ const PLANS = [
       "Unlimited messages",
       "Full memory — she never forgets",
       "Smart proactive reminders",
-      "Calendar, Canvas & email sync",
+      "Calendar, Canvas, Outlook & email sync",
       "Voice note transcription",
       "Priority support",
     ],

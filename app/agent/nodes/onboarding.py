@@ -118,6 +118,7 @@ async def onboarding_handler(state: AuraState) -> dict:
             buttons=[
                 {"id": "connect_canvas", "title": "Connect Canvas"},
                 {"id": "connect_google", "title": "Connect Google"},
+                {"id": "connect_microsoft", "title": "Connect Outlook"},
             ],
         )
 

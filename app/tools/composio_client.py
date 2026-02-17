@@ -16,7 +16,13 @@ logger = logging.getLogger(__name__)
 composio = Composio(api_key=settings.composio_api_key)
 
 # Map Composio toolkit names → our internal provider names
-_TOOLKIT_MAP = {"GMAIL": "google", "GOOGLECALENDAR": "google", "CANVAS": "canvas"}
+_TOOLKIT_MAP = {
+    "GMAIL": "google",
+    "GOOGLECALENDAR": "google",
+    "CANVAS": "canvas",
+    "OUTLOOK": "microsoft",
+    "MICROSOFTOUTLOOK": "microsoft",
+}
 
 
 async def execute_tool(slug: str, user_id: str, arguments: dict) -> dict:
@@ -47,6 +53,16 @@ async def get_connected_integrations(user_id: str) -> list[str]:
         if slug:
             providers.add(_TOOLKIT_MAP.get(slug.upper(), slug))
     return list(providers)
+
+
+async def get_email_provider(user_id: str) -> str:
+    """Return 'microsoft' or 'google' based on connected integrations."""
+    providers = await get_connected_integrations(user_id)
+    if "microsoft" in providers:
+        return "microsoft"
+    if "google" in providers:
+        return "google"
+    return ""
 
 
 async def initiate_connection(user_id: str, auth_config_id: str, **kwargs):

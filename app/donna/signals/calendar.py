@@ -1,22 +1,34 @@
-"""Calendar signal collector — polls Google Calendar via Composio."""
+"""Calendar signal collector — polls Google Calendar or Outlook via Composio."""
 
 import logging
+import zoneinfo
 from datetime import datetime, timezone
 
 from donna.signals.base import Signal, SignalType
 from tools.calendar import get_calendar_events
+from tools.composio_client import get_email_provider
 
 logger = logging.getLogger(__name__)
 
 
-async def collect_calendar_signals(user_id: str) -> list[Signal]:
-    """Generate signals from the user's Google Calendar."""
+async def collect_calendar_signals(user_id: str, user_tz: str = "UTC") -> list[Signal]:
+    """Generate signals from the user's calendar (Google or Outlook)."""
+    provider = await get_email_provider(user_id)
+    if not provider:
+        return []
+    source = "outlook_calendar" if provider == "microsoft" else "google_calendar"
+
+    try:
+        tz = zoneinfo.ZoneInfo(user_tz)
+    except (KeyError, zoneinfo.ZoneInfoNotFoundError):
+        tz = timezone.utc
+    local_now = datetime.now(tz)
     now = datetime.now(timezone.utc)
     signals: list[Signal] = []
 
-    # Fetch today's events
+    # Fetch today's events using user-local date
     today_events = await get_calendar_events(
-        user_id=user_id, date=now.strftime("%Y-%m-%dT00:00:00"), days=1,
+        user_id=user_id, date=local_now.strftime("%Y-%m-%dT00:00:00"), days=1,
     )
 
     # Bail if calendar not connected (returns error dict)
@@ -28,13 +40,15 @@ async def collect_calendar_signals(user_id: str) -> list[Signal]:
         signals.append(Signal(
             type=SignalType.CALENDAR_EMPTY_DAY,
             user_id=user_id,
-            data={"date": now.date().isoformat()},
+            data={"date": local_now.date().isoformat()},
+            source=source,
         ))
     elif len(today_events) >= 5:
         signals.append(Signal(
             type=SignalType.CALENDAR_BUSY_DAY,
             user_id=user_id,
-            data={"event_count": len(today_events), "date": now.date().isoformat()},
+            data={"event_count": len(today_events), "date": local_now.date().isoformat()},
+            source=source,
         ))
 
     # ── Approaching events (within next 60 min) ─────────────────────────
@@ -59,6 +73,7 @@ async def collect_calendar_signals(user_id: str) -> list[Signal]:
                     "minutes_away": round(minutes_away),
                     "location": event.get("location", ""),
                 },
+                source=source,
             ))
         elif -15 <= minutes_away <= 0:
             signals.append(Signal(
@@ -69,6 +84,7 @@ async def collect_calendar_signals(user_id: str) -> list[Signal]:
                     "start": start_str,
                     "minutes_ago": round(abs(minutes_away)),
                 },
+                source=source,
             ))
 
     # ── Free time gaps (>= 2 hours in remaining day) ────────────────────
@@ -90,7 +106,7 @@ async def collect_calendar_signals(user_id: str) -> list[Signal]:
 
     # Find gaps between events
     cursor = now
-    day_end = now.replace(hour=22, minute=0, second=0, microsecond=0)
+    day_end = local_now.replace(hour=22, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
 
     for s, e in remaining_events:
         if cursor < s:
@@ -119,6 +135,7 @@ async def collect_calendar_signals(user_id: str) -> list[Signal]:
                     "end": day_end.isoformat(),
                     "duration_hours": round(gap_hours, 1),
                 },
+                source=source,
             ))
 
     return signals

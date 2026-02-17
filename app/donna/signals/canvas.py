@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 
 from donna.signals.base import Signal, SignalType
-from tools.canvas import get_canvas_assignments
+from tools.canvas import get_canvas_assignments, get_canvas_grades
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,7 @@ async def collect_canvas_signals(user_id: str) -> list[Signal]:
                     "hours_overdue": round(abs(hours_until), 1),
                     "points": assignment.get("points"),
                 },
+                source="canvas",
             ))
             continue
 
@@ -72,7 +73,28 @@ async def collect_canvas_signals(user_id: str) -> list[Signal]:
                             "urgency_label": label,
                             "points": assignment.get("points"),
                         },
+                        source="canvas",
                     ))
                     break  # only emit the tightest threshold
+
+    # ── Recently graded assignments ──────────────────────────────
+    try:
+        grades = await get_canvas_grades(user_id=user_id)
+        if grades and not (isinstance(grades[0], dict) and "error" in grades[0]):
+            for grade in grades:
+                if grade.get("score") is not None:
+                    signals.append(Signal(
+                        type=SignalType.CANVAS_GRADE_POSTED,
+                        user_id=user_id,
+                        data={
+                            "title": grade.get("assignment", ""),
+                            "course": grade.get("course", ""),
+                            "score": grade.get("score"),
+                            "points_possible": grade.get("points_possible"),
+                        },
+                        source="canvas",
+                    ))
+    except Exception:
+        logger.exception("Failed to fetch Canvas grades for user %s", user_id)
 
     return signals

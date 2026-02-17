@@ -27,8 +27,32 @@ async def send_whatsapp_message(to: str, text: str):
         return resp.json()
 
 
-async def send_whatsapp_template(to: str, template_name: str, params: list[str]):
-    """Send a template message (for proactive outreach outside 24h window)."""
+async def send_whatsapp_template(
+    to: str,
+    template_name: str,
+    params: list[str],
+    button_payloads: list[str] | None = None,
+):
+    """Send a template message (for proactive outreach outside 24h window).
+
+    If button_payloads is provided, quick-reply button components are appended
+    so WhatsApp can route tap callbacks back to us.
+    """
+    components = [
+        {
+            "type": "body",
+            "parameters": [{"type": "text", "text": p} for p in params],
+        }
+    ]
+    if button_payloads:
+        for i, payload in enumerate(button_payloads):
+            components.append({
+                "type": "button",
+                "sub_type": "quick_reply",
+                "index": str(i),
+                "parameters": [{"type": "payload", "payload": payload}],
+            })
+
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"{WA_API_BASE}/{settings.whatsapp_phone_number_id}/messages",
@@ -40,14 +64,7 @@ async def send_whatsapp_template(to: str, template_name: str, params: list[str])
                 "template": {
                     "name": template_name,
                     "language": {"code": "en"},
-                    "components": [
-                        {
-                            "type": "body",
-                            "parameters": [
-                                {"type": "text", "text": p} for p in params
-                            ],
-                        }
-                    ],
+                    "components": components,
                 },
             },
         )

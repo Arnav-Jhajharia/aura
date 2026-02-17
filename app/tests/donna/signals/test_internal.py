@@ -162,6 +162,37 @@ async def test_habit_streak_at_risk(db_session, patch_async_session, user_id):
     assert risk[0].data["habit_name"] == "Gym"
 
 
+async def test_morning_window_respects_user_tz(db_session, patch_async_session, user_id):
+    """Morning window should fire at 08:00 SGT, not 08:00 UTC.
+
+    At 00:30 UTC it's 08:30 SGT. With user_tz="Asia/Singapore" and
+    wake_time="08:00", the morning window should fire.
+    """
+    import zoneinfo
+
+    user = make_user(id=user_id, wake_time="08:00", sleep_time="23:00", timezone="Asia/Singapore")
+    db_session.add(user)
+    await db_session.commit()
+
+    # 00:30 UTC = 08:30 SGT
+    fake_utc = datetime(2025, 6, 15, 0, 30, tzinfo=timezone.utc)
+    sgt = zoneinfo.ZoneInfo("Asia/Singapore")
+    fake_sgt = fake_utc.astimezone(sgt)  # 08:30 SGT
+
+    def fake_now(tz=None):
+        if tz is not None and str(tz) != "UTC":
+            return fake_sgt
+        return fake_utc
+
+    with mock.patch("donna.signals.internal.datetime") as mock_dt:
+        mock_dt.now.side_effect = fake_now
+        mock_dt.side_effect = lambda *a, **k: datetime(*a, **k)
+        signals = await collect_internal_signals(user_id, user_tz="Asia/Singapore")
+
+    types = [s.type for s in signals]
+    assert SignalType.TIME_MORNING_WINDOW in types
+
+
 async def test_no_signals_for_missing_user(patch_async_session):
     """Non-existent user should return empty."""
     signals = await collect_internal_signals("no-such-user")

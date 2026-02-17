@@ -63,6 +63,41 @@ async def google_callback_calendar(request: Request, user_id: str = ""):
     )
 
 
+# ---------- Microsoft Outlook (via Composio) ----------
+# Microsoft Graph covers both mail + calendar in one OAuth consent — no chaining needed.
+
+
+@router.get("/microsoft/login")
+async def microsoft_login(user_id: str):
+    """Start Microsoft OAuth — single step covers Outlook mail + calendar."""
+    connection = await initiate_connection(
+        user_id=user_id,
+        auth_config_id=settings.composio_outlook_auth_config_id,
+        config={"auth_scheme": "OAUTH2"},
+        callback_url=f"{settings.api_base_url}/auth/microsoft/callback?user_id={user_id}",
+    )
+    return RedirectResponse(connection.redirect_url)
+
+
+@router.get("/microsoft/callback")
+async def microsoft_callback(request: Request, user_id: str = ""):
+    """Microsoft OAuth done — mail + calendar are both ready."""
+    async with async_session() as session:
+        user_result = await session.execute(select(User).where(User.id == user_id))
+        user = user_result.scalar_one_or_none()
+
+    if user:
+        await send_whatsapp_message(
+            to=user.phone,
+            text="Microsoft connected. Outlook email and calendar are ready to go.",
+        )
+
+    logger.info("Microsoft OAuth completed for user %s (Outlook mail + calendar via Composio)", user_id)
+    return HTMLResponse(
+        "<h2>Microsoft connected! You can close this tab and go back to WhatsApp.</h2>"
+    )
+
+
 # ---------- Canvas ----------
 
 

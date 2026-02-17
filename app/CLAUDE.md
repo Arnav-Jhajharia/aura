@@ -51,9 +51,9 @@ Scheduler → donna_loop(user_id) → signals → context → LLM candidates →
 ```
 
 **Signal Layer** (`donna/signals/`):
-- `calendar.py` — polls Google Calendar for upcoming events, gaps, busy/empty days
+- `calendar.py` — polls Google Calendar or Outlook Calendar for upcoming events, gaps, busy/empty days (dynamic source tag)
 - `canvas.py` — checks Canvas assignments for approaching/overdue deadlines
-- `email.py` — checks Gmail for piling unread / important emails
+- `email.py` — checks Gmail or Outlook for piling unread / important emails (dynamic source tag)
 - `internal.py` — time-based signals (morning/evening window, interaction gaps, mood trends, overdue tasks, habit streaks, memory relevance)
 - `collector.py` — runs all 4 collectors concurrently, sorts by urgency
 
@@ -104,12 +104,14 @@ Nodes that call the LLM use `ChatOpenAI` with async `ainvoke()` and expect JSON-
 ### External Integrations
 
 - **Google (Gmail + Calendar)**: Composio SDK (`tools/composio_client.py`). Composio handles OAuth token lifecycle. Chained OAuth flow: Gmail → Calendar.
+- **Microsoft (Outlook Mail + Calendar)**: Composio SDK. Single OAuth flow covers both mail and calendar via Microsoft Graph. Provider detection via `get_email_provider()` in `composio_client.py`.
 - **Canvas LMS**: Direct httpx + OAuthToken (PAT paste flow). Composio doesn't support Canvas PAT paste.
-- **Auth flow**: `api/auth.py` — Google via Composio OAuth2 redirect; Canvas via paste-token stored in OAuthToken table.
+- **Auth flow**: `api/auth.py` — Google via Composio OAuth2 redirect (Gmail → Calendar chained); Microsoft via single Composio OAuth2 redirect; Canvas via paste-token stored in OAuthToken table.
+- **Provider-agnostic tools**: `tools/email.py` and `tools/calendar.py` auto-detect the user's provider (Google vs Microsoft) and use the appropriate Composio action slugs. `tools/nusmods.py` also creates calendar events via the detected provider.
 
 ### Configuration
 
-All config loaded from `.env` via `pydantic-settings` in `config.py`. Required keys: `OPENAI_API_KEY`, `DATABASE_URL`, `DATABASE_URL_DIRECT`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `CANVAS_BASE_URL`, `COMPOSIO_API_KEY`, `COMPOSIO_GMAIL_AUTH_CONFIG_ID`, `COMPOSIO_GCAL_AUTH_CONFIG_ID`, `DEEPGRAM_API_KEY`, R2 storage credentials.
+All config loaded from `.env` via `pydantic-settings` in `config.py`. Required keys: `OPENAI_API_KEY`, `DATABASE_URL`, `DATABASE_URL_DIRECT`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `CANVAS_BASE_URL`, `COMPOSIO_API_KEY`, `COMPOSIO_GMAIL_AUTH_CONFIG_ID`, `COMPOSIO_GCAL_AUTH_CONFIG_ID`, `COMPOSIO_OUTLOOK_AUTH_CONFIG_ID`, `DEEPGRAM_API_KEY`, R2 storage credentials.
 
 ### Testing
 

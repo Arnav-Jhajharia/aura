@@ -150,6 +150,7 @@ async def count_proactive_today(user_id: str) -> int:
             .where(
                 ChatMessage.user_id == user_id,
                 ChatMessage.role == "assistant",
+                ChatMessage.is_proactive.is_(True),
                 ChatMessage.created_at >= today_start,
             )
         )

@@ -1,6 +1,7 @@
 """Internal signal collector — time-based and DB-derived signals."""
 
 import logging
+import zoneinfo
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -12,9 +13,14 @@ from donna.signals.base import Signal, SignalType
 logger = logging.getLogger(__name__)
 
 
-async def collect_internal_signals(user_id: str) -> list[Signal]:
+async def collect_internal_signals(user_id: str, user_tz: str = "UTC") -> list[Signal]:
     """Generate signals from internal state: time, mood, tasks, interaction gaps."""
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    try:
+        tz = zoneinfo.ZoneInfo(user_tz)
+    except (KeyError, zoneinfo.ZoneInfoNotFoundError):
+        tz = timezone.utc
+    local_now = datetime.now(tz)
+    now = local_now.replace(tzinfo=None)
     signals: list[Signal] = []
 
     async with async_session() as session:
@@ -26,7 +32,7 @@ async def collect_internal_signals(user_id: str) -> list[Signal]:
 
         wake_hour = int((user.wake_time or "08:00").split(":")[0])
         sleep_hour = int((user.sleep_time or "23:00").split(":")[0])
-        current_hour = now.hour  # NOTE: should be user's local time; using UTC for now
+        current_hour = now.hour
 
         # ── Morning / evening window ─────────────────────────────────
         if abs(current_hour - wake_hour) <= 1:
@@ -34,6 +40,7 @@ async def collect_internal_signals(user_id: str) -> list[Signal]:
                 type=SignalType.TIME_MORNING_WINDOW,
                 user_id=user_id,
                 data={"wake_time": user.wake_time, "user_name": user.name or ""},
+                source="internal",
             ))
 
         if abs(current_hour - sleep_hour) <= 1:
@@ -41,6 +48,7 @@ async def collect_internal_signals(user_id: str) -> list[Signal]:
                 type=SignalType.TIME_EVENING_WINDOW,
                 user_id=user_id,
                 data={"sleep_time": user.sleep_time, "user_name": user.name or ""},
+                source="internal",
             ))
 
         # ── Time since last interaction ──────────────────────────────
@@ -58,6 +66,7 @@ async def collect_internal_signals(user_id: str) -> list[Signal]:
                     type=SignalType.TIME_SINCE_LAST_INTERACTION,
                     user_id=user_id,
                     data={"hours_since": round(hours_since, 1)},
+                    source="internal",
                 ))
 
         # ── Mood trend (last 7 days) ─────────────────────────────────
@@ -84,6 +93,7 @@ async def collect_internal_signals(user_id: str) -> list[Signal]:
                         "last_score": scores[-1],
                         "days_tracked": len(moods),
                     },
+                    source="internal",
                 ))
             elif recent_avg >= 7 and recent_avg > overall_avg + 1:
                 signals.append(Signal(
@@ -94,6 +104,7 @@ async def collect_internal_signals(user_id: str) -> list[Signal]:
                         "overall_avg": round(overall_avg, 1),
                         "last_score": scores[-1],
                     },
+                    source="internal",
                 ))
 
         # ── Overdue tasks ────────────────────────────────────────────
@@ -119,6 +130,7 @@ async def collect_internal_signals(user_id: str) -> list[Signal]:
                     "priority": task.priority,
                     "source": task.source,
                 },
+                source="internal",
             ))
 
         # ── Tasks due today ──────────────────────────────────────────
@@ -144,6 +156,7 @@ async def collect_internal_signals(user_id: str) -> list[Signal]:
                     "priority": task.priority,
                     "source": task.source,
                 },
+                source="internal",
             ))
 
         # ── Habit streak at risk ────────────────────────────────────
@@ -167,6 +180,7 @@ async def collect_internal_signals(user_id: str) -> list[Signal]:
                         "current_streak": habit.current_streak,
                         "hours_since_logged": round(hours_since_logged, 1),
                     },
+                    source="internal",
                 ))
             elif habit.target_frequency == "weekly" and hours_since_logged >= 144:  # 6 days
                 signals.append(Signal(
@@ -177,6 +191,7 @@ async def collect_internal_signals(user_id: str) -> list[Signal]:
                         "current_streak": habit.current_streak,
                         "hours_since_logged": round(hours_since_logged, 1),
                     },
+                    source="internal",
                 ))
 
             # Milestone check
@@ -188,6 +203,7 @@ async def collect_internal_signals(user_id: str) -> list[Signal]:
                         "habit_name": habit.name,
                         "current_streak": habit.current_streak,
                     },
+                    source="internal",
                 ))
 
         # ── Memory relevance window ────────────────────────────────
@@ -218,6 +234,7 @@ async def collect_internal_signals(user_id: str) -> list[Signal]:
                         "is_evening": is_evening,
                         "is_weekend": is_weekend,
                     },
+                    source="internal",
                 ))
 
     return signals

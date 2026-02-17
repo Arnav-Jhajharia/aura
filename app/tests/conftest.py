@@ -17,6 +17,7 @@ from db.models import (
     Habit,
     MemoryFact,
     MoodLog,
+    SignalState,  # noqa: F401 — imported so create_all() builds its table
     Task,
     User,
     generate_uuid,
@@ -29,6 +30,8 @@ _MODULES_USING_SESSION = [
     "donna.signals.calendar",
     "donna.signals.canvas",
     "donna.signals.email",
+    "donna.signals.dedup",
+    "donna.signals.collector",
     "donna.brain.context",
     "donna.brain.sender",
     "donna.brain.rules",

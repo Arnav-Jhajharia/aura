@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     whatsapp_token: str = ""
     whatsapp_phone_number_id: str = ""
     whatsapp_verify_token: str = "aura-verify-token"
+    whatsapp_business_account_id: str = ""  # WABA ID for template management
 
     # Canvas
     canvas_base_url: str = ""
@@ -33,6 +34,7 @@ class Settings(BaseSettings):
     composio_api_key: str = ""
     composio_gmail_auth_config_id: str = ""      # Auth config for Gmail
     composio_gcal_auth_config_id: str = ""       # Auth config for Google Calendar
+    composio_outlook_auth_config_id: str = ""    # Auth config for Microsoft Outlook (email + calendar)
 
     # Transcription
     deepgram_api_key: str = ""

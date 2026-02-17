@@ -114,7 +114,7 @@ export default function HowDonnaWorks() {
             <em className="italic text-[var(--color-warm)]">your week.</em>
           </h2>
           <p className="text-[16px] leading-[1.7] text-[var(--color-text-muted)] font-light max-w-[400px] mx-auto md:mx-0">
-            Donna reads your Google Calendar, Canvas, Gmail, and more — before you even think to check them. Connect once, never update her again.
+            Donna reads your Google Calendar, Outlook, Canvas, Gmail, and more — before you even think to check them. Connect once, never update her again.
           </p>
         </motion.div>
 

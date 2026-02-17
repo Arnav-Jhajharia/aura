@@ -2,7 +2,9 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import DeclarativeBase, relationship
 
@@ -154,6 +156,7 @@ class ChatMessage(Base):
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
     role = Column(String, nullable=False)  # "user" | "assistant"
     content = Column(Text, nullable=False)
+    is_proactive = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="chat_messages")
@@ -173,3 +176,21 @@ class MemoryFact(Base):
     last_referenced = Column(DateTime)
 
     user = relationship("User", back_populates="memory_facts")
+
+
+class SignalState(Base):
+    __tablename__ = "signal_states"
+    __table_args__ = (
+        UniqueConstraint("user_id", "dedup_key", name="uq_signal_state_user_dedup"),
+        Index("ix_signal_state_user_id", "user_id"),
+    )
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    dedup_key = Column(String, nullable=False)
+    signal_type = Column(String, nullable=False)
+    first_seen = Column(DateTime, default=datetime.utcnow)
+    last_seen = Column(DateTime, default=datetime.utcnow)
+    times_seen = Column(Integer, default=1)
+    last_acted_on = Column(DateTime, nullable=True)
+    suppressed_until = Column(DateTime, nullable=True)

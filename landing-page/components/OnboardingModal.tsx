@@ -102,7 +102,7 @@ function ChoiceStep({ onIntegrate, onWhatsApp }: { onIntegrate: () => void; onWh
             Let&apos;s integrate services first
           </p>
           <p className="text-[12px] text-[var(--color-text-muted)] font-light">
-            Google, Canvas, NUSMods &amp; more
+            Google, Outlook, Canvas, NUSMods &amp; more
           </p>
         </div>
       </button>
@@ -324,7 +324,16 @@ function CanvasStep({ phone, onNext }: { phone: string; onNext: () => void }) {
 }
 
 // ── Step: Outlook ───────────────────────────────────────────
-function OutlookStep({ onNext }: { onNext: () => void }) {
+function OutlookStep({ phone, onNext }: { phone: string; onNext: () => void }) {
+  const [connecting, setConnecting] = useState(false);
+
+  function handleConnect() {
+    setConnecting(true);
+    const url = `${API_URL}/auth/microsoft/login?user_id=${encodeURIComponent(phone)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+    setTimeout(() => setConnecting(false), 2000);
+  }
+
   return (
     <>
       <StepDots current={3} total={6} />
@@ -336,18 +345,18 @@ function OutlookStep({ onNext }: { onNext: () => void }) {
       </div>
 
       <h3 className="text-[20px] leading-[1.2] text-[var(--color-text-primary)] mb-2" style={{ fontFamily: "var(--font-serif)" }}>
-        Outlook
-        <span className="ml-2 text-[10px] uppercase tracking-[2px] text-[var(--color-warm)]/60 font-sans font-medium align-middle">
-          Coming soon
-        </span>
+        Microsoft Outlook
       </h3>
       <p className="text-[13px] leading-[1.6] text-[var(--color-text-muted)] font-light mb-8">
-        Connect Outlook email and calendar to keep Donna in sync with your work.
+        Connect Outlook email and calendar so Donna can read your NUS emails and schedule.
       </p>
 
       <div className="flex flex-col gap-2.5">
-        <button disabled className="w-full py-3 rounded-full text-[13px] font-medium bg-white/[0.04] text-white/20 cursor-not-allowed">
-          Connect Outlook
+        <button
+          onClick={handleConnect}
+          className="w-full py-3 rounded-full text-[13px] font-medium bg-[var(--color-warm)] text-[var(--color-bg-dark)] hover:-translate-y-0.5 hover:shadow-[0_6px_30px_rgba(196,149,106,0.2)] transition-all cursor-pointer"
+        >
+          {connecting ? "Opening..." : "Connect Outlook"}
         </button>
         <button onClick={onNext} className="w-full py-3 rounded-full text-[13px] font-light text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors cursor-pointer">
           Skip for now
@@ -567,7 +576,7 @@ export default function OnboardingModal({
               {step === "phone" && <PhoneStep onNext={handlePhoneSubmit} />}
               {step === "google" && <GoogleStep phone={phone} onNext={() => setStep(nextStep("google"))} />}
               {step === "canvas" && <CanvasStep phone={phone} onNext={() => setStep(nextStep("canvas"))} />}
-              {step === "outlook" && <OutlookStep onNext={() => setStep(nextStep("outlook"))} />}
+              {step === "outlook" && <OutlookStep phone={phone} onNext={() => setStep(nextStep("outlook"))} />}
               {step === "nusmods" && <NUSModsStep phone={phone} onNext={() => setStep("verify")} />}
               {step === "verify" && <VerifyStep phone={phone} code={verifyCode} onClose={onClose} />}
             </motion.div>

@@ -29,8 +29,8 @@ def route_after_ingress(state: AuraState) -> str:
     # Pending token collection takes priority
     action = state.get("pending_action")
     raw = state.get("raw_input", "")
-    if action in ("connect_canvas", "awaiting_canvas_token", "connect_google") or \
-       raw in ("connect_canvas", "connect_google"):
+    if action in ("connect_canvas", "awaiting_canvas_token", "connect_google", "connect_microsoft") or \
+       raw in ("connect_canvas", "connect_google", "connect_microsoft"):
         return "token_collector"
     # Auto-detect: user pasted a Canvas token without tapping the button first
     if _looks_like_canvas_token(raw):

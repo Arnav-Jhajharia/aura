@@ -61,6 +61,15 @@ async def token_collector(state: AuraState) -> dict:
             "response": f"Tap the link to connect Google Calendar and Gmail:\n{google_url}",
         }
 
+    # ── User tapped "Connect Outlook" button ──────────────────────────────
+    if action == "connect_microsoft" or user_input == "connect_microsoft":
+        microsoft_url = (
+            f"{settings.api_base_url}/auth/microsoft/login?user_id={user_id}"
+        )
+        return {
+            "response": f"Tap the link to connect Outlook email and calendar:\n{microsoft_url}",
+        }
+
     # ── User tapped "Connect Canvas" button ──────────────────────────────────
     if action == "connect_canvas" or user_input == "connect_canvas":
         async with async_session() as session:

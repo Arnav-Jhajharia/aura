@@ -56,6 +56,38 @@ class Signal:
     user_id: str
     data: dict[str, Any] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    source: str = ""
+    dedup_key: str = ""
+    local_timestamp: str = ""
+
+    def compute_dedup_key(self) -> str:
+        """Build a deterministic dedup key from signal type + distinguishing data fields."""
+        t = self.type.value
+        d = self.data
+
+        # Signals keyed by a unique external ID
+        if "id" in d and d["id"]:
+            self.dedup_key = f"{t}:{d['id']}"
+        # Signals keyed by a title (assignments, tasks, events)
+        elif "title" in d:
+            self.dedup_key = f"{t}:{d['title']}"
+        # Signals keyed by a date (empty/busy day)
+        elif "date" in d:
+            self.dedup_key = f"{t}:{d['date']}"
+        # Signals keyed by habit name
+        elif "habit_name" in d:
+            self.dedup_key = f"{t}:{d['habit_name']}"
+        # Time-window signals: once per day
+        elif t.startswith("time_"):
+            self.dedup_key = f"{t}:daily"
+        # Mood signals: once per day
+        elif t.startswith("mood_"):
+            self.dedup_key = f"{t}:daily"
+        # Fallback
+        else:
+            self.dedup_key = t
+
+        return self.dedup_key
 
     @property
     def urgency_hint(self) -> int:
