@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -8,6 +9,31 @@ from agent.state import AuraState
 from config import settings
 
 logger = logging.getLogger(__name__)
+
+# ── Deterministic question detection ────────────────────────────────────────
+# If the LLM misclassifies an obvious question as info_dump/thought, override.
+_QUESTION_WORD_RE = re.compile(
+    r"^(what|when|where|who|why|how|which|is|are|do|does|did|can|could|will|would|should|have|has|any)\b",
+    re.IGNORECASE,
+)
+_QUESTION_PHRASES = [
+    "what's", "whats", "how's", "hows", "where's", "wheres", "who's", "whos",
+    "when's", "whens", "do i", "am i", "is there", "are there", "tell me",
+    "show me", "give me", "check my", "what about", "anything",
+]
+# Intents that should NOT be overridden even if message looks like a question
+_NO_OVERRIDE_INTENTS = {"command", "vent", "reflection", "capabilities"}
+
+
+def _looks_like_question(text: str) -> bool:
+    """Heuristic: does this message look like a question?"""
+    stripped = text.strip()
+    if stripped.endswith("?"):
+        return True
+    lower = stripped.lower()
+    if _QUESTION_WORD_RE.match(lower):
+        return True
+    return any(lower.startswith(p) for p in _QUESTION_PHRASES)
 
 CLASSIFICATION_PROMPT = """You are classifying a WhatsApp message from the user.
 
@@ -104,8 +130,18 @@ async def intent_classifier(state: AuraState) -> dict:
             "entities": {"dates": [], "people": [], "amounts": [], "topics": []},
         }
 
+    intent = parsed.get("intent", "thought")
+
+    # ── Deterministic guard: prevent obvious questions from being buried ──
+    if intent in ("info_dump", "thought") and intent not in _NO_OVERRIDE_INTENTS:
+        if _looks_like_question(text):
+            logger.info(
+                "Override: '%s' classified as %s but looks like a question", text[:60], intent
+            )
+            intent = "question"
+
     return {
-        "intent": parsed.get("intent", "thought"),
+        "intent": intent,
         "entities": parsed.get("entities", {}),
         "tools_needed": [],  # planner handles tool selection now
     }
