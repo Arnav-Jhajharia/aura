@@ -1,12 +1,16 @@
-"""Scorer and filter — applies hard rules and soft scoring to candidates."""
+"""Scorer and filter — applies soft scoring and dedup to candidates.
+
+Hard rules (quiet hours, cooldown, daily cap) have moved to prefilter.py
+so they run BEFORE the LLM call.
+"""
 
 import logging
-import zoneinfo
-from datetime import datetime, timezone
+import random
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, func
 
-from db.models import ChatMessage
+from db.models import ChatMessage, DeferredInsight, generate_uuid
 from db.session import async_session
 
 logger = logging.getLogger(__name__)
@@ -17,49 +21,22 @@ W_TIMING = 0.35
 W_URGENCY = 0.25
 
 # Thresholds
-SCORE_THRESHOLD = 5.5          # minimum composite score to send
-COOLDOWN_MINUTES = 30          # min gap between proactive messages
-MAX_PROACTIVE_PER_DAY = 4      # max proactive messages per day
-URGENT_SCORE_OVERRIDE = 8.5    # bypass cooldown if score is this high
-
-
-def _get_local_hour(user: dict) -> int:
-    """Get current hour in the user's timezone."""
-    tz_name = user.get("timezone", "UTC")
-    try:
-        tz = zoneinfo.ZoneInfo(tz_name)
-    except (KeyError, zoneinfo.ZoneInfoNotFoundError):
-        tz = timezone.utc
-    return datetime.now(tz).hour
+SCORE_THRESHOLD = 5.5          # minimum composite score to send (default)
+DEFERRED_MIN_SCORE = 4.0       # minimum score to save as deferred insight
+DEFERRED_EXPIRY_HOURS = 24
 
 
 def score_and_filter(candidates: list[dict], context: dict) -> list[dict]:
-    """Score candidates, apply hard rules, return approved messages sorted by score.
+    """Score candidates, apply soft filters, return approved messages sorted by score.
 
-    Returns only candidates that pass all filters, sorted best-first.
+    Hard rules (quiet hours, cooldown, daily cap) are now in prefilter.py.
+    This function handles: composite scoring, score threshold, dedup.
+
+    Candidates that fall below threshold but above DEFERRED_MIN_SCORE are
+    collected in context["_deferred_candidates"] for later saving.
     """
     if not candidates:
         return []
-
-    user = context.get("user", {})
-    minutes_since_last = context.get("minutes_since_last_message")
-
-    # ── Hard rule: quiet hours (in user's timezone) ────────────────
-    current_hour = _get_local_hour(user)
-
-    wake_hour = int((user.get("wake_time") or "08:00").split(":")[0])
-    sleep_hour = int((user.get("sleep_time") or "23:00").split(":")[0])
-
-    in_quiet_hours = False
-    if sleep_hour > wake_hour:
-        # Normal: wake 8, sleep 23 → quiet = [23, 8)
-        in_quiet_hours = current_hour >= sleep_hour or current_hour < wake_hour
-    else:
-        # Wraps midnight: wake 10, sleep 2 → quiet = [2, 10)
-        in_quiet_hours = sleep_hour <= current_hour < wake_hour
-
-    # ── Check daily cap from DB ────────────────────────────────────
-    sent_today = context.get("proactive_sent_today", 0)
 
     # ── Recent assistant messages for dedup ─────────────────────────
     recent_messages = [
@@ -68,9 +45,25 @@ def score_and_filter(candidates: list[dict], context: dict) -> list[dict]:
         if m.get("role") == "assistant"
     ]
 
+    # Trust-dependent threshold (Phase 2)
+    threshold = context.get("score_threshold", SCORE_THRESHOLD)
+
+    # ── Suppressed categories (hard enforcement) ────────────────────
+    suppressed = context.get("category_suppression", {}).get("suppressed", {})
+
     scored: list[dict] = []
+    deferred: list[dict] = []
 
     for candidate in candidates:
+        # ── Hard filter: suppressed categories ─────────────────────
+        if candidate.get("category") in suppressed:
+            logger.debug(
+                "Filtered (suppressed category %s): %s",
+                candidate["category"],
+                candidate["message"][:50],
+            )
+            continue
+
         relevance = candidate.get("relevance", 5)
         timing = candidate.get("timing", 5)
         urgency = candidate.get("urgency", 5)
@@ -82,25 +75,25 @@ def score_and_filter(candidates: list[dict], context: dict) -> list[dict]:
         )
         candidate["composite_score"] = round(composite, 2)
 
-        # ── Filter: quiet hours (only override for truly urgent) ─────
-        if in_quiet_hours and composite < URGENT_SCORE_OVERRIDE:
-            logger.debug("Filtered (quiet hours): %s", candidate["message"][:50])
-            continue
-
         # ── Filter: score threshold ──────────────────────────────────
-        if composite < SCORE_THRESHOLD:
-            logger.debug("Filtered (low score %.1f): %s", composite, candidate["message"][:50])
-            continue
-
-        # ── Filter: cooldown (unless very urgent) ────────────────────
-        if minutes_since_last is not None and minutes_since_last < COOLDOWN_MINUTES:
-            if composite < URGENT_SCORE_OVERRIDE:
+        if composite < threshold:
+            # Exploration budget: 10% chance to allow borderline candidates
+            if (
+                random.random() < 0.10
+                and composite >= threshold - 1.0
+                and composite >= DEFERRED_MIN_SCORE
+            ):
+                candidate["_explored"] = True
+                scored.append(candidate)
                 logger.debug(
-                    "Filtered (cooldown %dm): %s",
-                    int(minutes_since_last),
-                    candidate["message"][:50],
+                    "Exploration pass (score %.1f, threshold %.1f): %s",
+                    composite, threshold, candidate["message"][:50],
                 )
                 continue
+            if composite >= DEFERRED_MIN_SCORE:
+                deferred.append(candidate)
+            logger.debug("Filtered (low score %.1f): %s", composite, candidate["message"][:50])
+            continue
 
         # ── Filter: dedup (skip if similar to recent assistant message) ──
         candidate_lower = candidate["message"].lower()
@@ -112,7 +105,11 @@ def score_and_filter(candidates: list[dict], context: dict) -> list[dict]:
                 continue
             overlap = len(candidate_words & recent_words) / max(len(candidate_words), 1)
             if overlap > 0.6:
-                logger.debug("Filtered (dedup %.0f%% overlap): %s", overlap * 100, candidate["message"][:50])
+                logger.debug(
+                    "Filtered (dedup %.0f%% overlap): %s",
+                    overlap * 100,
+                    candidate["message"][:50],
+                )
                 is_duplicate = True
                 break
         if is_duplicate:
@@ -123,9 +120,9 @@ def score_and_filter(candidates: list[dict], context: dict) -> list[dict]:
     # Sort by composite score descending
     scored.sort(key=lambda c: c["composite_score"], reverse=True)
 
-    # ── Hard rule: daily cap ─────────────────────────────────────────
-    remaining_cap = max(0, MAX_PROACTIVE_PER_DAY - sent_today)
-    scored = scored[:remaining_cap]
+    # Store deferred candidates in context for the loop to save
+    if deferred:
+        context["_deferred_candidates"] = deferred
 
     if scored:
         logger.info(
@@ -137,6 +134,31 @@ def score_and_filter(candidates: list[dict], context: dict) -> list[dict]:
         )
 
     return scored
+
+
+async def save_deferred_insights(user_id: str, context: dict) -> None:
+    """Save borderline candidates as deferred insights for reactive use."""
+    deferred = context.pop("_deferred_candidates", [])
+    if not deferred:
+        return
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    expires_at = now + timedelta(hours=DEFERRED_EXPIRY_HOURS)
+
+    async with async_session() as session:
+        for candidate in deferred:
+            session.add(DeferredInsight(
+                id=generate_uuid(),
+                user_id=user_id,
+                category=candidate.get("category", "nudge"),
+                message_draft=candidate["message"],
+                trigger_signals=candidate.get("trigger_signals", []),
+                relevance_score=candidate.get("composite_score", 0),
+                expires_at=expires_at,
+            ))
+        await session.commit()
+
+    logger.info("Saved %d deferred insights for user %s", len(deferred), user_id)
 
 
 async def count_proactive_today(user_id: str) -> int:

@@ -78,12 +78,16 @@ async def deduplicate_signals(user_id: str, signals: list[Signal]) -> list[Signa
         emitted: list[Signal] = []
         now = datetime.now(timezone.utc).replace(tzinfo=None)
 
+        # Track keys we've already handled in THIS batch to avoid
+        # inserting duplicate SignalState rows (same dedup_key).
+        seen_in_batch: dict[str, SignalState] = {}
+
         for sig in signals:
-            state = existing_states.get(sig.dedup_key)
+            state = existing_states.get(sig.dedup_key) or seen_in_batch.get(sig.dedup_key)
 
             if state is None:
                 # New signal — emit and create state
-                session.add(SignalState(
+                new_state = SignalState(
                     id=generate_uuid(),
                     user_id=user_id,
                     dedup_key=sig.dedup_key,
@@ -91,7 +95,9 @@ async def deduplicate_signals(user_id: str, signals: list[Signal]) -> list[Signa
                     first_seen=now,
                     last_seen=now,
                     times_seen=1,
-                ))
+                )
+                session.add(new_state)
+                seen_in_batch[sig.dedup_key] = new_state
                 emitted.append(sig)
             else:
                 # Update tracking regardless

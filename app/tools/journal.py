@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
@@ -51,7 +51,7 @@ async def log_mood(user_id: str, entities: dict = None, **kwargs) -> dict:
         await session.commit()
 
         # Calculate trend
-        seven_days_ago = datetime.utcnow() - timedelta(days=7)
+        seven_days_ago = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
         result = await session.execute(
             select(MoodLog)
             .where(MoodLog.user_id == user_id, MoodLog.created_at >= seven_days_ago)
@@ -70,7 +70,7 @@ async def log_mood(user_id: str, entities: dict = None, **kwargs) -> dict:
 async def get_mood_history(user_id: str, entities: dict = None, **kwargs) -> list[dict]:
     """Get mood history for the last N days."""
     days = kwargs.get("days", 7)
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
 
     async with async_session() as session:
         result = await session.execute(

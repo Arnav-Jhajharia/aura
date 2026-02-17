@@ -83,11 +83,19 @@ async def collect_canvas_signals(user_id: str) -> list[Signal]:
         if grades and not (isinstance(grades[0], dict) and "error" in grades[0]):
             for grade in grades:
                 if grade.get("score") is not None:
+                    # Build a meaningful title for dedup — fall back to
+                    # course+score so different grades don't collapse to
+                    # the same dedup key.
+                    title = grade.get("assignment") or ""
+                    if not title or title == "Unknown":
+                        course = grade.get("course", "")
+                        score = grade.get("score", "")
+                        title = f"{course}:{score}" if course else f"grade:{score}"
                     signals.append(Signal(
                         type=SignalType.CANVAS_GRADE_POSTED,
                         user_id=user_id,
                         data={
-                            "title": grade.get("assignment", ""),
+                            "title": title,
                             "course": grade.get("course", ""),
                             "score": grade.get("score"),
                             "points_possible": grade.get("points_possible"),

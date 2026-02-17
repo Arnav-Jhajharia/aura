@@ -1,6 +1,6 @@
 """End-to-end scenario tests for the Donna proactive loop.
 
-These test the full pipeline: signals → context → candidates → score → send,
+These test the full pipeline: signals → prefilter → context → candidates → score → send,
 using the test SQLite DB and mocked LLM + WhatsApp.
 """
 
@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 
 from donna.loop import donna_loop
 from donna.signals.base import Signal, SignalType
+from tools.whatsapp import WhatsAppResult
 from tests.conftest import (
     make_chat_message,
     make_memory_fact,
@@ -20,10 +21,29 @@ from tests.conftest import (
     make_user,
 )
 
+# Mock trust to "established" so full-loop scenarios behave as before
+_ESTABLISHED_TRUST = {
+    "level": "established",
+    "days_active": 60,
+    "total_interactions": 200,
+    "score_threshold": 5.5,
+    "daily_cap": 4,
+    "min_urgency": 5,
+}
+
+_WA_SUCCESS = WhatsAppResult(success=True, wa_message_id="wamid.test")
+
 
 def _patch_daytime(hour=14):
-    """Patch _get_local_hour and datetime.now to simulate daytime."""
-    return mock.patch("donna.brain.rules._get_local_hour", return_value=hour)
+    """Patch _get_local_hour in prefilter to simulate daytime."""
+    return mock.patch("donna.brain.prefilter._get_local_hour", return_value=hour)
+
+
+def _patch_trust(trust=None):
+    return mock.patch(
+        "donna.brain.prefilter.compute_trust_level",
+        return_value=trust or _ESTABLISHED_TRUST,
+    )
 
 
 def _mock_llm_response(candidates: list[dict]):
@@ -45,7 +65,12 @@ class TestDonnaScenarios:
             due_date=datetime(2025, 6, 16, 23, 59),
             source="canvas",
         )
-        db_session.add_all([user, task])
+        # Recent user message so WhatsApp 24h window is open
+        user_msg = make_chat_message(
+            user_id="s-deadline", role="user", content="hey",
+            created_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        )
+        db_session.add_all([user, task, user_msg])
         await db_session.commit()
 
         candidates = [{
@@ -68,7 +93,9 @@ class TestDonnaScenarios:
             patch("donna.brain.candidates.llm", _mock_llm_response(candidates)),
             patch("donna.memory.recall.llm", _mock_llm_response([])),
             _patch_daytime(14),
-            patch("donna.brain.sender.send_whatsapp_message", new_callable=AsyncMock) as mock_wa,
+            _patch_trust(),
+            patch("donna.brain.sender.send_whatsapp_message", new_callable=AsyncMock,
+                  return_value=_WA_SUCCESS) as mock_wa,
         ):
             sent = await donna_loop("s-deadline")
 
@@ -87,7 +114,8 @@ class TestDonnaScenarios:
             patch("donna.signals.collector.collect_canvas_signals", return_value=[]),
             patch("donna.signals.collector.collect_email_signals", return_value=[]),
             patch("donna.signals.collector.collect_internal_signals", return_value=[]),
-            patch("donna.brain.sender.send_whatsapp_message", new_callable=AsyncMock) as mock_wa,
+            patch("donna.brain.sender.send_whatsapp_message", new_callable=AsyncMock,
+                  return_value=_WA_SUCCESS) as mock_wa,
         ):
             sent = await donna_loop("s-quiet")
 
@@ -103,7 +131,11 @@ class TestDonnaScenarios:
             category="entity:place",
             created_at=datetime(2025, 6, 1, 12, 0),
         )
-        db_session.add_all([user, fact])
+        user_msg = make_chat_message(
+            user_id="s-memory", role="user", content="hey",
+            created_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        )
+        db_session.add_all([user, fact, user_msg])
         await db_session.commit()
 
         candidates = [{
@@ -128,7 +160,9 @@ class TestDonnaScenarios:
             patch("donna.brain.candidates.llm", _mock_llm_response(candidates)),
             patch("donna.memory.recall.llm", recall_llm),
             _patch_daytime(19),
-            patch("donna.brain.sender.send_whatsapp_message", new_callable=AsyncMock) as mock_wa,
+            _patch_trust(),
+            patch("donna.brain.sender.send_whatsapp_message", new_callable=AsyncMock,
+                  return_value=_WA_SUCCESS) as mock_wa,
         ):
             sent = await donna_loop("s-memory")
 
@@ -146,7 +180,11 @@ class TestDonnaScenarios:
             user_id="s-mood", title="Readings ch 5",
             due_date=datetime(2025, 6, 14, 12, 0),
         )
-        db_session.add_all([user, task])
+        user_msg = make_chat_message(
+            user_id="s-mood", role="user", content="hey",
+            created_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        )
+        db_session.add_all([user, task, user_msg])
         await db_session.commit()
 
         candidates = [{
@@ -163,46 +201,50 @@ class TestDonnaScenarios:
             patch("donna.brain.candidates.llm", _mock_llm_response(candidates)),
             patch("donna.memory.recall.llm", _mock_llm_response([])),
             _patch_daytime(14),
-            patch("donna.brain.sender.send_whatsapp_message", new_callable=AsyncMock),
+            _patch_trust(),
+            patch("donna.brain.sender.send_whatsapp_message", new_callable=AsyncMock,
+                  return_value=_WA_SUCCESS),
         ):
             sent = await donna_loop("s-mood")
 
         assert sent == 1
 
     async def test_scenario_quiet_hours_blocks(self, db_session, patch_async_session):
-        """2am + medium urgency → message blocked."""
+        """2am + non-urgent signal → prefilter blocks before LLM call."""
         user = make_user(id="s-quiet-hr")
         db_session.add(user)
         await db_session.commit()
 
-        candidates = [{
-            "message": "Canvas deadline in 3 days",
-            "relevance": 6, "timing": 5, "urgency": 4,
-            "trigger_signals": ["canvas_deadline_approaching"],
-            "category": "deadline_warning",
-        }]
-
         with (
             patch("donna.signals.collector.collect_calendar_signals", return_value=[]),
-            patch("donna.signals.collector.collect_canvas_signals", return_value=[
-                Signal(type=SignalType.CANVAS_DEADLINE_APPROACHING, user_id="s-quiet-hr",
-                       data={"hours_until_due": 72}),
-            ]),
+            patch("donna.signals.collector.collect_canvas_signals", return_value=[]),
             patch("donna.signals.collector.collect_email_signals", return_value=[]),
-            patch("donna.brain.candidates.llm", _mock_llm_response(candidates)),
-            patch("donna.memory.recall.llm", _mock_llm_response([])),
+            patch("donna.signals.collector.collect_internal_signals", return_value=[
+                Signal(type=SignalType.TASK_DUE_TODAY, user_id="s-quiet-hr",
+                       data={"title": "Read ch 5"}),
+            ]),
+            # LLM should NOT be called — prefilter blocks first
+            patch("donna.brain.candidates.llm") as mock_llm,
             _patch_daytime(2),  # 2am — quiet hours
-            patch("donna.brain.sender.send_whatsapp_message", new_callable=AsyncMock) as mock_wa,
+            _patch_trust(),
+            patch("donna.brain.sender.send_whatsapp_message", new_callable=AsyncMock,
+                  return_value=_WA_SUCCESS) as mock_wa,
         ):
             sent = await donna_loop("s-quiet-hr")
 
         assert sent == 0
         mock_wa.assert_not_called()
+        # The key improvement: LLM should not have been invoked
+        mock_llm.ainvoke.assert_not_called()
 
     async def test_scenario_urgent_overrides_quiet(self, db_session, patch_async_session):
         """2am + assignment due in 1 hour → high urgency overrides quiet hours."""
         user = make_user(id="s-urgent")
-        db_session.add(user)
+        user_msg = make_chat_message(
+            user_id="s-urgent", role="user", content="hey",
+            created_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        )
+        db_session.add_all([user, user_msg])
         await db_session.commit()
 
         candidates = [{
@@ -221,8 +263,10 @@ class TestDonnaScenarios:
             patch("donna.signals.collector.collect_email_signals", return_value=[]),
             patch("donna.brain.candidates.llm", _mock_llm_response(candidates)),
             patch("donna.memory.recall.llm", _mock_llm_response([])),
-            _patch_daytime(2),  # 2am — quiet hours, but score will be 10.0 > 8.5
-            patch("donna.brain.sender.send_whatsapp_message", new_callable=AsyncMock) as mock_wa,
+            _patch_daytime(2),  # 2am — quiet hours, but urgent signal passes prefilter
+            _patch_trust(),
+            patch("donna.brain.sender.send_whatsapp_message", new_callable=AsyncMock,
+                  return_value=_WA_SUCCESS) as mock_wa,
         ):
             sent = await donna_loop("s-urgent")
 
@@ -230,32 +274,29 @@ class TestDonnaScenarios:
         mock_wa.assert_called_once()
 
     async def test_scenario_cooldown_respected(self, db_session, patch_async_session):
-        """Donna sent a message 15 min ago → new non-urgent message held."""
+        """Donna sent a message 15 min ago → prefilter blocks before LLM."""
         user = make_user(id="s-cooldown")
-        # Recent assistant message 15 min ago
         recent_msg = make_chat_message(
             user_id="s-cooldown", role="assistant",
             content="SE due Friday",
             created_at=datetime.now(timezone.utc) - timedelta(minutes=15),
         )
+        recent_msg.is_proactive = True
         db_session.add_all([user, recent_msg])
         await db_session.commit()
-
-        candidates = [{
-            "message": "Don't forget to hydrate",
-            "relevance": 5, "timing": 6, "urgency": 3,
-            "trigger_signals": ["time_since_last_interaction"],
-            "category": "wellbeing",
-        }]
 
         with (
             patch("donna.signals.collector.collect_calendar_signals", return_value=[]),
             patch("donna.signals.collector.collect_canvas_signals", return_value=[]),
             patch("donna.signals.collector.collect_email_signals", return_value=[]),
-            patch("donna.brain.candidates.llm", _mock_llm_response(candidates)),
-            patch("donna.memory.recall.llm", _mock_llm_response([])),
+            patch("donna.signals.collector.collect_internal_signals", return_value=[
+                Signal(type=SignalType.TASK_DUE_TODAY, user_id="s-cooldown",
+                       data={"title": "Do homework"}),
+            ]),
             _patch_daytime(14),
-            patch("donna.brain.sender.send_whatsapp_message", new_callable=AsyncMock) as mock_wa,
+            _patch_trust(),
+            patch("donna.brain.sender.send_whatsapp_message", new_callable=AsyncMock,
+                  return_value=_WA_SUCCESS) as mock_wa,
         ):
             sent = await donna_loop("s-cooldown")
 
@@ -265,7 +306,11 @@ class TestDonnaScenarios:
     async def test_scenario_busy_day_briefing(self, db_session, patch_async_session):
         """Morning window + 6 events → morning briefing sent."""
         user = make_user(id="s-busy")
-        db_session.add(user)
+        user_msg = make_chat_message(
+            user_id="s-busy", role="user", content="hey",
+            created_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        )
+        db_session.add_all([user, user_msg])
         await db_session.commit()
 
         candidates = [{
@@ -285,7 +330,9 @@ class TestDonnaScenarios:
             patch("donna.brain.candidates.llm", _mock_llm_response(candidates)),
             patch("donna.memory.recall.llm", _mock_llm_response([])),
             _patch_daytime(8),
-            patch("donna.brain.sender.send_whatsapp_message", new_callable=AsyncMock) as mock_wa,
+            _patch_trust(),
+            patch("donna.brain.sender.send_whatsapp_message", new_callable=AsyncMock,
+                  return_value=_WA_SUCCESS) as mock_wa,
         ):
             sent = await donna_loop("s-busy")
 

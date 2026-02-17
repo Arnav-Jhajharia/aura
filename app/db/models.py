@@ -33,6 +33,24 @@ class User(Base):
     pending_action = Column(String, nullable=True)   # awaiting_canvas_token | awaiting_google_token
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # Academic profile
+    academic_year = Column(Integer, nullable=True)
+    faculty = Column(String, nullable=True)
+    major = Column(String, nullable=True)
+    graduation_year = Column(Integer, nullable=True)
+
+    # Integration flags
+    has_canvas = Column(Boolean, default=False)
+    has_google = Column(Boolean, default=False)
+    has_microsoft = Column(Boolean, default=False)
+    nusmods_imported = Column(Boolean, default=False)
+
+    # Activity stats
+    total_messages = Column(Integer, default=0)
+    proactive_engagement_rate = Column(Float, nullable=True)
+    avg_response_latency_seconds = Column(Float, nullable=True)
+    last_active_at = Column(DateTime, nullable=True)
+
     oauth_tokens = relationship("OAuthToken", back_populates="user")
     tasks = relationship("Task", back_populates="user")
     journal_entries = relationship("JournalEntry", back_populates="user")
@@ -42,6 +60,8 @@ class User(Base):
     habits = relationship("Habit", back_populates="user")
     memory_facts = relationship("MemoryFact", back_populates="user")
     chat_messages = relationship("ChatMessage", back_populates="user")
+    entities = relationship("UserEntity", back_populates="user")
+    behaviors = relationship("UserBehavior", back_populates="user")
 
 
 class OAuthToken(Base):
@@ -157,6 +177,7 @@ class ChatMessage(Base):
     role = Column(String, nullable=False)  # "user" | "assistant"
     content = Column(Text, nullable=False)
     is_proactive = Column(Boolean, default=False)
+    wa_message_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="chat_messages")
@@ -178,6 +199,43 @@ class MemoryFact(Base):
     user = relationship("User", back_populates="memory_facts")
 
 
+class UserEntity(Base):
+    __tablename__ = "user_entities"
+    __table_args__ = (
+        UniqueConstraint("user_id", "entity_type", "name_normalized", name="uq_user_entity"),
+    )
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    entity_type = Column(String, nullable=False)  # person, place, task, idea, event, preference
+    name = Column(String, nullable=False)
+    name_normalized = Column(String, nullable=False)  # lowercase stripped for dedup
+    metadata_ = Column("metadata", JSON, default=dict)
+    sentiment = Column(String, nullable=True)  # positive, negative, neutral
+    mention_count = Column(Integer, default=1)
+    first_mentioned = Column(DateTime, default=datetime.utcnow)
+    last_mentioned = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="entities")
+
+
+class UserBehavior(Base):
+    __tablename__ = "user_behaviors"
+    __table_args__ = (
+        UniqueConstraint("user_id", "behavior_key", name="uq_user_behavior"),
+    )
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    behavior_key = Column(String, nullable=False)
+    value = Column(JSON, nullable=False)
+    confidence = Column(Float, default=0.5)
+    sample_size = Column(Integer, default=0)
+    last_computed = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="behaviors")
+
+
 class SignalState(Base):
     __tablename__ = "signal_states"
     __table_args__ = (
@@ -194,3 +252,51 @@ class SignalState(Base):
     times_seen = Column(Integer, default=1)
     last_acted_on = Column(DateTime, nullable=True)
     suppressed_until = Column(DateTime, nullable=True)
+
+
+class ProactiveFeedback(Base):
+    __tablename__ = "proactive_feedback"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    message_id = Column(String, nullable=False)
+    category = Column(String)
+    trigger_signals = Column(JSON)
+    sent_at = Column(DateTime, default=datetime.utcnow)
+    outcome = Column(String, default="pending")  # pending, engaged, ignored, negative, button_click
+    response_latency_seconds = Column(Float, nullable=True)
+    wa_message_id = Column(String, nullable=True)
+    format_used = Column(String, nullable=True)          # text|button|list|cta_url|template
+    template_name = Column(String, nullable=True)
+    delivery_status = Column(String, default="sent")     # sent|delivered|read|failed
+    delivery_failed_reason = Column(String, nullable=True)
+    reply_sentiment = Column(String, nullable=True)      # positive|neutral|negative
+    feedback_score = Column(Float, nullable=True)        # -1.0 to 1.0, from OUTCOME_HIERARCHY
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class DeferredInsight(Base):
+    __tablename__ = "deferred_insights"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    category = Column(String)
+    message_draft = Column(Text)
+    trigger_signals = Column(JSON)
+    relevance_score = Column(Float)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False)
+
+
+class DeferredSend(Base):
+    __tablename__ = "deferred_sends"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    candidate_json = Column(JSON, nullable=False)
+    block_reason = Column(String)
+    scheduled_for = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    attempted = Column(Boolean, default=False)
+    expired = Column(Boolean, default=False)

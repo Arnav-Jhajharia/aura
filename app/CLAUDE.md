@@ -30,17 +30,24 @@ Aura is a **WhatsApp-based personal assistant** for students. Users interact ent
 WhatsApp → POST /webhook → process_message() → LangGraph StateGraph → WhatsApp reply
 ```
 
-The agent graph in `agent/graph.py` sequences these nodes:
+The agent graph in `agent/graph.py` uses a **ReAct planner loop**:
 
-1. **message_ingress** (`nodes/ingress.py`) — Lookup/create user by phone number
+1. **message_ingress** (`nodes/ingress.py`) — Lookup/create user by phone, load last 3 conversation turns
 2. **route_after_ingress** — Branch: `token_collector` (pending OAuth) | `onboarding_handler` (new user) | `classify_type`
 3. **classify_type** (`nodes/classifier.py`) — Route audio → `voice_transcriber`, else → `intent_classifier`
 4. **voice_transcriber** (`nodes/transcriber.py`) — Download from WhatsApp, transcribe via Deepgram
-5. **intent_classifier** (`nodes/classifier.py`) — LLM extracts `intent`, `entities`, `tools_needed`
-6. **context_loader** (`nodes/context.py`) — Enrich `user_context` from DB (tasks, mood, deadlines)
-7. **tool_executor** (`nodes/executor.py`) — Calls tools from `TOOL_REGISTRY` by name
-8. **response_composer** (`nodes/composer.py`) — LLM generates WhatsApp-formatted reply
-9. **memory_writer** (`nodes/memory.py`) — Extracts facts + entities, persists memory, sends WhatsApp message
+5. **intent_classifier** (`nodes/classifier.py`) — History-aware LLM extracts `intent` + `entities` (no tool selection — planner handles that)
+6. **thin_context_loader** (`nodes/context.py`) — Load only profile, behaviors, integrations (~300 tokens). Heavy context loaded on-demand by planner.
+7. **planner** (`nodes/planner.py`) — ReAct loop (max 3 iterations): decides what tool to call next or hands off to composer. Fast-paths thoughts/vents with zero tool calls.
+8. **tool_executor** (`nodes/executor.py`) — Executes single tool from planner (`_next_tool`), then loops back to planner
+9. **response_composer** (`nodes/composer.py`) — LLM generates WhatsApp-formatted reply
+10. **memory_writer** (`nodes/memory.py`) — Extracts facts + entities, persists memory, sends WhatsApp message
+
+```
+classifier → thin_context → planner ⟲ tool_executor → composer → memory_writer
+```
+
+The planner can call `recall_context` (`tools/recall_context.py`) to load specific DB context slices (tasks, moods, deadlines, expenses, deferred_insights) on demand instead of loading everything upfront.
 
 ### Proactive Messaging (Donna)
 

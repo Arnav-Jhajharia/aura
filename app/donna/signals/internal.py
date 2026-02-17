@@ -35,11 +35,15 @@ async def collect_internal_signals(user_id: str, user_tz: str = "UTC") -> list[S
         current_hour = now.hour
 
         # ── Morning / evening window ─────────────────────────────────
+        # These are CONTEXT-ONLY signals.  They tell the brain *when* it is,
+        # but should never be the sole reason to message.  On their own they
+        # produce vague "good morning" fluff.
         if abs(current_hour - wake_hour) <= 1:
             signals.append(Signal(
                 type=SignalType.TIME_MORNING_WINDOW,
                 user_id=user_id,
-                data={"wake_time": user.wake_time, "user_name": user.name or ""},
+                data={"wake_time": user.wake_time, "user_name": user.name or "",
+                       "_context_only": True},
                 source="internal",
             ))
 
@@ -47,11 +51,14 @@ async def collect_internal_signals(user_id: str, user_tz: str = "UTC") -> list[S
             signals.append(Signal(
                 type=SignalType.TIME_EVENING_WINDOW,
                 user_id=user_id,
-                data={"sleep_time": user.sleep_time, "user_name": user.name or ""},
+                data={"sleep_time": user.sleep_time, "user_name": user.name or "",
+                       "_context_only": True},
                 source="internal",
             ))
 
         # ── Time since last interaction ──────────────────────────────
+        # Also context-only — knowing the user hasn't chatted in a while
+        # doesn't justify a message unless there's something concrete to say.
         last_msg_result = await session.execute(
             select(ChatMessage.created_at)
             .where(ChatMessage.user_id == user_id, ChatMessage.role == "user")
@@ -65,7 +72,8 @@ async def collect_internal_signals(user_id: str, user_tz: str = "UTC") -> list[S
                 signals.append(Signal(
                     type=SignalType.TIME_SINCE_LAST_INTERACTION,
                     user_id=user_id,
-                    data={"hours_since": round(hours_since, 1)},
+                    data={"hours_since": round(hours_since, 1),
+                           "_context_only": True},
                     source="internal",
                 ))
 

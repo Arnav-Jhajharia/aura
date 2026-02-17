@@ -108,9 +108,11 @@ async def submit_canvas_token(body: CanvasTokenRequest):
 
         # Clear pending action if set
         user_result = await session.execute(select(User).where(User.id == user_id))
-        user = user_result.scalar_one()
-        if user.pending_action in ("awaiting_canvas_token", "connect_canvas"):
-            user.pending_action = None
+        user = user_result.scalar_one_or_none()
+        if user:
+            if user.pending_action in ("awaiting_canvas_token", "connect_canvas"):
+                user.pending_action = None
+            user.has_canvas = True
         await session.commit()
 
     logger.info("Canvas token stored for user %s (phone %s)", user_id, body.user_id)
@@ -153,6 +155,12 @@ async def submit_nusmods(body: NUSModsRequest):
                 category="context",
                 confidence=1.0,
             ))
+
+        # Set NUSMods imported flag
+        user_result = await session.execute(select(User).where(User.id == user_id))
+        user = user_result.scalar_one_or_none()
+        if user:
+            user.nusmods_imported = True
 
         await session.commit()
 

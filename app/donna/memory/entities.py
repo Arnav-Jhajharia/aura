@@ -1,14 +1,17 @@
-"""Entity extraction — pulls structured entities from user messages and stores as MemoryFacts."""
+"""Entity extraction — pulls structured entities from user messages and stores as MemoryFacts + UserEntities."""
 
 import json
 import logging
+from datetime import datetime, timezone
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
+from sqlalchemy import select
 
 from config import settings
-from db.models import MemoryFact, generate_uuid
+from db.models import MemoryFact, UserEntity, generate_uuid
 from db.session import async_session
+from donna.memory.embeddings import embed_text
 
 logger = logging.getLogger(__name__)
 
@@ -90,16 +93,68 @@ async def extract_entities(user_id: str, message: str) -> list[dict]:
                     if e["temporal"]:
                         context_str += f" (temporal: {e['temporal']})"
 
+                    fact_text = f"{e['entity']}: {context_str}"
+
+                    # Generate embedding (graceful degradation — store without if it fails)
+                    vector = None
+                    try:
+                        vector = await embed_text(fact_text)
+                    except Exception:
+                        logger.debug("Embedding failed for entity fact, storing without vector")
+
                     session.add(MemoryFact(
                         id=generate_uuid(),
                         user_id=user_id,
-                        fact=f"{e['entity']}: {context_str}",
+                        fact=fact_text,
                         category=f"entity:{e['type']}",
                         confidence=0.7,
+                        embedding=vector,
                     ))
                 await session.commit()
-            logger.info("Stored %d entities for user %s", len(valid), user_id)
+            logger.info("Stored %d entity facts for user %s", len(valid), user_id)
         except Exception:
-            logger.exception("Failed to store entities for user %s", user_id)
+            logger.exception("Failed to store entity facts for user %s", user_id)
+
+    # Upsert into UserEntity (structured storage for queries)
+    if valid:
+        try:
+            async with async_session() as session:
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
+                for e in valid:
+                    name_normalized = e["entity"].strip().lower()
+                    result = await session.execute(
+                        select(UserEntity).where(
+                            UserEntity.user_id == user_id,
+                            UserEntity.entity_type == e["type"],
+                            UserEntity.name_normalized == name_normalized,
+                        )
+                    )
+                    existing = result.scalar_one_or_none()
+
+                    if existing:
+                        existing.mention_count += 1
+                        existing.last_mentioned = now
+                        # Append context
+                        meta = existing.metadata_ or {}
+                        contexts = meta.get("contexts", [])
+                        contexts.append(e["context"])
+                        meta["contexts"] = contexts[-10:]  # keep last 10
+                        existing.metadata_ = meta
+                    else:
+                        session.add(UserEntity(
+                            id=generate_uuid(),
+                            user_id=user_id,
+                            entity_type=e["type"],
+                            name=e["entity"],
+                            name_normalized=name_normalized,
+                            metadata_={"contexts": [e["context"]]},
+                            mention_count=1,
+                            first_mentioned=now,
+                            last_mentioned=now,
+                        ))
+                await session.commit()
+            logger.info("Upserted %d user entities for user %s", len(valid), user_id)
+        except Exception:
+            logger.exception("Failed to upsert user entities for user %s", user_id)
 
     return valid

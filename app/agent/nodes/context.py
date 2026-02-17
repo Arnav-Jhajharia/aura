@@ -1,40 +1,48 @@
 import logging
-from datetime import datetime, timedelta
 
 from sqlalchemy import select
 
 from agent.state import AuraState
 from config import settings
-from db.models import ChatMessage, Expense, MemoryFact, MoodLog, OAuthToken, Task
+from db.models import OAuthToken
 from db.session import async_session
+from donna.user_model import get_user_snapshot
 from tools.composio_client import get_connected_integrations
-
-HISTORY_WINDOW = 10  # last 10 messages (5 user + 5 assistant turns)
 
 logger = logging.getLogger(__name__)
 
 
-async def context_loader(state: AuraState) -> dict:
-    """Load relevant user context from the database based on intent.
+async def thin_context_loader(state: AuraState) -> dict:
+    """Load only what every message needs (~300 tokens).
 
     Pulls:
-    - connected_integrations — Google from Composio, Canvas from OAuthToken
-    - Pending tasks
-    - Recent mood scores (last 7 days)
-    - Today's expenses
-    - Upcoming deadlines
+    - user_profile, user_behaviors (from unified snapshot)
+    - connected_integrations (Google/Microsoft from Composio, Canvas from OAuthToken)
+    - connection instructions (when integrations missing)
+
+    Heavy context (tasks, moods, expenses, deadlines, deferred insights)
+    is now loaded on-demand by the planner via recall_context.
+    Conversation history is already loaded by message_ingress.
     """
     user_id = state["user_id"]
-    now = datetime.utcnow()
-    seven_days_ago = now - timedelta(days=7)
 
+    # Preserve fields already set by ingress (timezone, prefs, conversation_history)
     context = {**state.get("user_context", {})}
 
-    # Google integrations from Composio (handles Gmail + Calendar)
+    # Unified user snapshot (profile + behaviors)
+    try:
+        snapshot = await get_user_snapshot(user_id)
+        if snapshot:
+            context["user_profile"] = snapshot.get("profile", {})
+            context["user_behaviors"] = snapshot.get("behaviors", {})
+            context["memory_facts"] = snapshot.get("memory_facts", [])
+    except Exception:
+        logger.exception("Failed to load user snapshot for %s", user_id)
+
+    # Connected integrations
     connected = await get_connected_integrations(user_id)
 
     async with async_session() as session:
-        # Canvas integration from OAuthToken (uses direct httpx, not Composio)
         canvas_result = await session.execute(
             select(OAuthToken.provider).where(
                 OAuthToken.user_id == user_id,
@@ -44,9 +52,18 @@ async def context_loader(state: AuraState) -> dict:
         if canvas_result.scalar_one_or_none():
             connected.append("canvas")
 
-        context["connected_integrations"] = connected  # e.g. ["google", "canvas"] or []
+    context["connected_integrations"] = connected
 
-        # Canonical instructions for connecting integrations (when not connected)
+    # Connection instructions are only injected when the user's message
+    # is about connecting an integration.  Previously these were always
+    # present, which made the composer pitch Canvas/Google unprompted.
+    intent = state.get("intent")
+    raw = (state.get("raw_input") or "").lower()
+    _connect_keywords = ("connect", "link", "setup", "set up", "integrate", "canvas", "google",
+                         "outlook", "microsoft", "gmail", "calendar")
+    wants_connection = intent == "command" and any(k in raw for k in _connect_keywords)
+
+    if wants_connection:
         if "canvas" not in connected:
             context["canvas_connection_instructions"] = (
                 "1. Open Canvas → Account → Settings\n"
@@ -62,89 +79,8 @@ async def context_loader(state: AuraState) -> dict:
                 "Tap this link to connect Calendar and Gmail."
             )
 
-        # Pending tasks
-        tasks_result = await session.execute(
-            select(Task)
-            .where(Task.user_id == user_id, Task.status == "pending")
-            .order_by(Task.due_date.asc().nullslast())
-            .limit(20)
-        )
-        tasks = tasks_result.scalars().all()
-        context["pending_tasks"] = [
-            {
-                "id": t.id,
-                "title": t.title,
-                "due_date": t.due_date.isoformat() if t.due_date else None,
-                "priority": t.priority,
-            }
-            for t in tasks
-        ]
-
-        # Recent mood
-        mood_result = await session.execute(
-            select(MoodLog)
-            .where(MoodLog.user_id == user_id, MoodLog.created_at >= seven_days_ago)
-            .order_by(MoodLog.created_at.desc())
-        )
-        moods = mood_result.scalars().all()
-        context["recent_moods"] = [
-            {"score": m.score, "note": m.note, "date": m.created_at.isoformat()}
-            for m in moods
-        ]
-        if moods:
-            context["avg_mood"] = sum(m.score for m in moods) / len(moods)
-
-        # Upcoming deadlines (next 7 days)
-        deadline_cutoff = now + timedelta(days=7)
-        deadline_result = await session.execute(
-            select(Task)
-            .where(
-                Task.user_id == user_id,
-                Task.status == "pending",
-                Task.due_date.isnot(None),
-                Task.due_date <= deadline_cutoff,
-            )
-            .order_by(Task.due_date.asc())
-        )
-        deadlines = deadline_result.scalars().all()
-        context["upcoming_deadlines"] = [
-            {"title": t.title, "due_date": t.due_date.isoformat(), "source": t.source}
-            for t in deadlines
-        ]
-
-        # Today's expenses
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        expense_result = await session.execute(
-            select(Expense)
-            .where(Expense.user_id == user_id, Expense.created_at >= today_start)
-        )
-        expenses = expense_result.scalars().all()
-        context["today_spending"] = sum(e.amount for e in expenses)
-
-        # Conversation history (last N messages)
-        history_result = await session.execute(
-            select(ChatMessage)
-            .where(ChatMessage.user_id == user_id)
-            .order_by(ChatMessage.created_at.desc())
-            .limit(HISTORY_WINDOW)
-        )
-        history_rows = history_result.scalars().all()
-        context["conversation_history"] = [
-            {"role": m.role, "content": m.content}
-            for m in reversed(history_rows)
-        ]
-
-        # Long-term memory facts (most recent)
-        facts_result = await session.execute(
-            select(MemoryFact)
-            .where(MemoryFact.user_id == user_id)
-            .order_by(MemoryFact.created_at.desc())
-            .limit(15)
-        )
-        facts = facts_result.scalars().all()
-        context["memory_facts"] = [
-            {"fact": f.fact, "category": f.category}
-            for f in facts
-        ]
-
     return {"user_context": context}
+
+
+# Keep old name as alias for backwards compatibility in imports
+context_loader = thin_context_loader

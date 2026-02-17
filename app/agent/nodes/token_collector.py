@@ -41,6 +41,23 @@ async def _validate_canvas_token(token: str) -> bool:
         return False
 
 
+def _normalize_connect_action(action: str | None, user_input: str) -> str | None:
+    """Map pending_action or natural-language input to a canonical connect action."""
+    if action in ("connect_canvas", "awaiting_canvas_token", "connect_google", "connect_microsoft"):
+        return action
+    lower = user_input.lower().strip()
+    if lower in ("connect_canvas", "connect_google", "connect_microsoft"):
+        return lower
+    if any(k in lower for k in ("connect google", "link google", "setup google", "set up google")):
+        return "connect_google"
+    if any(k in lower for k in ("connect outlook", "link outlook", "setup outlook", "set up outlook",
+                                 "connect microsoft", "link microsoft")):
+        return "connect_microsoft"
+    if any(k in lower for k in ("connect canvas", "link canvas", "setup canvas", "set up canvas")):
+        return "connect_canvas"
+    return None
+
+
 async def token_collector(state: AuraState) -> dict:
     """Handle pending token-collection actions.
 
@@ -52,8 +69,11 @@ async def token_collector(state: AuraState) -> dict:
     action = state.get("pending_action")
     user_input = (state.get("transcription") or state.get("raw_input", "")).strip()
 
-    # ── User tapped "Connect Google" button ──────────────────────────────────
-    if action == "connect_google" or user_input == "connect_google":
+    # Normalize natural-language variants to canonical action
+    resolved = _normalize_connect_action(action, user_input)
+
+    # ── Connect Google ─────────────────────────────────────────────────────
+    if resolved == "connect_google":
         google_url = (
             f"{settings.api_base_url}/auth/google/login?user_id={user_id}"
         )
@@ -61,8 +81,8 @@ async def token_collector(state: AuraState) -> dict:
             "response": f"Tap the link to connect Google Calendar and Gmail:\n{google_url}",
         }
 
-    # ── User tapped "Connect Outlook" button ──────────────────────────────
-    if action == "connect_microsoft" or user_input == "connect_microsoft":
+    # ── Connect Outlook ────────────────────────────────────────────────────
+    if resolved == "connect_microsoft":
         microsoft_url = (
             f"{settings.api_base_url}/auth/microsoft/login?user_id={user_id}"
         )
@@ -70,11 +90,14 @@ async def token_collector(state: AuraState) -> dict:
             "response": f"Tap the link to connect Outlook email and calendar:\n{microsoft_url}",
         }
 
-    # ── User tapped "Connect Canvas" button ──────────────────────────────────
-    if action == "connect_canvas" or user_input == "connect_canvas":
+    # ── Connect Canvas ─────────────────────────────────────────────────────
+    if resolved == "connect_canvas":
         async with async_session() as session:
             result = await session.execute(select(User).where(User.id == user_id))
-            user = result.scalar_one()
+            user = result.scalar_one_or_none()
+            if not user:
+                logger.error("connect_canvas: user %s not found", user_id)
+                return {"response": None}
             user.pending_action = "awaiting_canvas_token"
             await session.commit()
         canvas_url = f"{settings.canvas_base_url}/profile/settings"
@@ -91,14 +114,15 @@ async def token_collector(state: AuraState) -> dict:
         }
 
     # ── User pasted their Canvas token (or pasted one without tapping the button) ─
-    if action == "awaiting_canvas_token" or (action is None and _looks_like_canvas_token(user_input)):
+    if resolved == "awaiting_canvas_token" or (resolved is None and _looks_like_canvas_token(user_input)):
         # User might be saying something else (opt-out, chat, question) — hand off to main flow
         if not _looks_like_canvas_token(user_input):
             async with async_session() as session:
                 result = await session.execute(select(User).where(User.id == user_id))
-                user = result.scalar_one()
-                user.pending_action = None
-                await session.commit()
+                user = result.scalar_one_or_none()
+                if user:
+                    user.pending_action = None
+                    await session.commit()
             return {
                 "pending_action": None,
                 "response": None,
@@ -134,10 +158,12 @@ async def token_collector(state: AuraState) -> dict:
                     access_token=token,
                 ))
 
-            # Clear pending action
+            # Clear pending action + set integration flag
             user_result = await session.execute(select(User).where(User.id == user_id))
-            user = user_result.scalar_one()
-            user.pending_action = None
+            user = user_result.scalar_one_or_none()
+            if user:
+                user.pending_action = None
+                user.has_canvas = True
             await session.commit()
 
         return {

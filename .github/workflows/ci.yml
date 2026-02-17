@@ -1,18 +1,23 @@
-name: Tests
+name: CI
 
 on:
   push:
     branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/ci.yml"
   pull_request:
     branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/ci.yml"
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: app
-
     steps:
       - uses: actions/checkout@v4
 
@@ -20,11 +25,28 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
-        run: pip install -e ".[dev]"
+      - name: Install ruff
+        run: pip install ruff
 
       - name: Lint
         run: ruff check . --target-version py311 --line-length 100
+
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: app/pyproject.toml
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
 
       - name: Run tests
         env:

@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
@@ -83,7 +83,7 @@ async def complete_task(user_id: str, entities: dict = None, **kwargs) -> dict:
             return {"error": "task not found"}
 
         task.status = "done"
-        task.completed_at = datetime.utcnow()
+        task.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
         await session.commit()
 
     return {"success": True, "title": task.title}

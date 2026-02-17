@@ -14,12 +14,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from db.models import (
     Base,
     ChatMessage,
+    DeferredInsight,  # noqa: F401 — imported so create_all() builds its table
+    DeferredSend,  # noqa: F401 — imported so create_all() builds its table
     Habit,
     MemoryFact,
     MoodLog,
+    ProactiveFeedback,  # noqa: F401 — imported so create_all() builds its table
     SignalState,  # noqa: F401 — imported so create_all() builds its table
     Task,
     User,
+    UserBehavior,
+    UserEntity,
     generate_uuid,
 )
 
@@ -35,11 +40,26 @@ _MODULES_USING_SESSION = [
     "donna.brain.context",
     "donna.brain.sender",
     "donna.brain.rules",
+    "donna.brain.prefilter",
+    "donna.brain.trust",
+    "donna.brain.feedback",
     "donna.memory.entities",
     "donna.memory.recall",
     "donna.memory.patterns",
     "tools.memory_search",
     "agent.nodes.memory",
+    "agent.nodes.context",
+    "agent.nodes.ingress",
+    "tools.recall_context",
+    "donna.memory.entity_store",
+    "donna.brain.behaviors",
+    "donna.reflection",
+    "donna.user_model",
+    "donna.brain.template_filler",
+    "donna.brain.validators",
+    "donna.brain.feedback_metrics",
+    "api.webhook",
+    "agent.scheduler",
 ]
 
 
@@ -95,13 +115,15 @@ def make_user(**overrides) -> User:
 
 
 def make_chat_message(user_id: str, role: str = "user", content: str = "hello",
-                      created_at: datetime | None = None) -> ChatMessage:
+                      created_at: datetime | None = None,
+                      wa_message_id: str | None = None) -> ChatMessage:
     return ChatMessage(
         id=generate_uuid(),
         user_id=user_id,
         role=role,
         content=content,
         created_at=created_at or datetime.now(timezone.utc),
+        wa_message_id=wa_message_id,
     )
 
 
@@ -153,3 +175,38 @@ def make_habit(user_id: str, name: str = "Gym", **overrides) -> Habit:
     }
     defaults.update(overrides)
     return Habit(**defaults)
+
+
+def make_user_entity(
+    user_id: str, name: str = "Noor", entity_type: str = "person", **overrides,
+) -> UserEntity:
+    defaults = {
+        "id": generate_uuid(),
+        "user_id": user_id,
+        "entity_type": entity_type,
+        "name": name,
+        "name_normalized": name.strip().lower(),
+        "metadata_": {"contexts": ["test context"]},
+        "mention_count": 1,
+        "first_mentioned": datetime.now(timezone.utc),
+        "last_mentioned": datetime.now(timezone.utc),
+    }
+    defaults.update(overrides)
+    return UserEntity(**defaults)
+
+
+def make_user_behavior(
+    user_id: str, behavior_key: str = "active_hours", value: dict | None = None,
+    **overrides,
+) -> UserBehavior:
+    defaults = {
+        "id": generate_uuid(),
+        "user_id": user_id,
+        "behavior_key": behavior_key,
+        "value": value or {"peak_hours": [9, 10, 14, 15]},
+        "confidence": 0.7,
+        "sample_size": 20,
+        "last_computed": datetime.now(timezone.utc),
+    }
+    defaults.update(overrides)
+    return UserBehavior(**defaults)

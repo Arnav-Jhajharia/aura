@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 
@@ -30,7 +30,7 @@ async def log_expense(user_id: str, entities: dict = None, **kwargs) -> dict:
         await session.commit()
 
         # Weekly total
-        week_ago = datetime.utcnow() - timedelta(days=7)
+        week_ago = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
         result = await session.execute(
             select(func.sum(Expense.amount)).where(
                 Expense.user_id == user_id,
@@ -51,7 +51,7 @@ async def get_expense_summary(user_id: str, entities: dict = None, **kwargs) -> 
     """Get expense summary for a given period (week or month)."""
     period = kwargs.get("period", "week")
     days = 7 if period == "week" else 30
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
 
     async with async_session() as session:
         result = await session.execute(

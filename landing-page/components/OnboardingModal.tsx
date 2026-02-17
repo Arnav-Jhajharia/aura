@@ -2,9 +2,21 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { QRCodeSVG } from "qrcode.react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const WA_NUMBER = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "";
+
+function useIsMobile() {
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setMobile(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+  return mobile;
+}
 
 // ── Step types ──────────────────────────────────────────────
 type Step = "choice" | "phone" | "google" | "canvas" | "outlook" | "nusmods" | "verify";
@@ -75,7 +87,10 @@ function StepDots({ current, total }: { current: number; total: number }) {
 }
 
 // ── Step: Choice ────────────────────────────────────────────
-function ChoiceStep({ onIntegrate, onWhatsApp }: { onIntegrate: () => void; onWhatsApp: () => void }) {
+function ChoiceStep({ onIntegrate, onWhatsApp, waLink }: { onIntegrate: () => void; onWhatsApp: () => void; waLink: string }) {
+  const isMobile = useIsMobile();
+  const [showQR, setShowQR] = useState(false);
+
   return (
     <>
       <h3
@@ -107,24 +122,73 @@ function ChoiceStep({ onIntegrate, onWhatsApp }: { onIntegrate: () => void; onWh
         </div>
       </button>
 
-      <button
-        onClick={onWhatsApp}
-        className="w-full flex items-center gap-4 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02] hover:border-white/[0.1] transition-all cursor-pointer text-left group"
-      >
-        <div className="w-10 h-10 rounded-xl bg-white/[0.05] flex items-center justify-center shrink-0">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-white/40">
-            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-          </svg>
-        </div>
-        <div>
-          <p className="text-[14px] font-medium text-[var(--color-text-primary)]">
-            I&apos;ll use WhatsApp directly
-          </p>
-          <p className="text-[12px] text-[var(--color-text-muted)] font-light">
-            You can always integrate later
-          </p>
-        </div>
-      </button>
+      {isMobile ? (
+        <button
+          onClick={onWhatsApp}
+          className="w-full flex items-center gap-4 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02] hover:border-white/[0.1] transition-all cursor-pointer text-left group"
+        >
+          <div className="w-10 h-10 rounded-xl bg-white/[0.05] flex items-center justify-center shrink-0">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-white/40">
+              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-[14px] font-medium text-[var(--color-text-primary)]">
+              I&apos;ll use WhatsApp directly
+            </p>
+            <p className="text-[12px] text-[var(--color-text-muted)] font-light">
+              You can always integrate later
+            </p>
+          </div>
+        </button>
+      ) : (
+        <button
+          onClick={() => setShowQR(true)}
+          className="w-full flex items-center gap-4 p-4 rounded-xl border border-white/[0.06] bg-white/[0.02] hover:border-white/[0.1] transition-all cursor-pointer text-left group"
+        >
+          <div className="w-10 h-10 rounded-xl bg-white/[0.05] flex items-center justify-center shrink-0">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-white/40">
+              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+            </svg>
+          </div>
+          <div>
+            <p className="text-[14px] font-medium text-[var(--color-text-primary)]">
+              I&apos;ll use WhatsApp directly
+            </p>
+            <p className="text-[12px] text-[var(--color-text-muted)] font-light">
+              Scan QR code to start chatting
+            </p>
+          </div>
+        </button>
+      )}
+
+      {/* Desktop QR expand */}
+      <AnimatePresence>
+        {showQR && !isMobile && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            className="overflow-hidden"
+          >
+            <div className="flex flex-col items-center pt-5">
+              <div className="p-4 bg-white rounded-2xl">
+                <QRCodeSVG
+                  value={waLink}
+                  size={160}
+                  level="M"
+                  bgColor="#ffffff"
+                  fgColor="#080B0F"
+                />
+              </div>
+              <p className="text-[12px] text-[var(--color-text-muted)] font-light mt-3">
+                Scan with your phone camera to open WhatsApp
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }
@@ -465,6 +529,7 @@ function NUSModsStep({ phone, onNext }: { phone: string; onNext: () => void }) {
 // ── Step: Verify ────────────────────────────────────────────
 function VerifyStep({ phone, code, onClose }: { phone: string; code: string; onClose: () => void }) {
   const waLink = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(code)}`;
+  const isMobile = useIsMobile();
 
   return (
     <>
@@ -480,38 +545,76 @@ function VerifyStep({ phone, code, onClose }: { phone: string; code: string; onC
         One last thing
       </h3>
       <p className="text-[13px] leading-[1.6] text-[var(--color-text-muted)] font-light mb-6">
-        Text this code to Donna on WhatsApp to verify your number and activate your account.
+        {isMobile
+          ? "Text this code to Donna on WhatsApp to verify your number and activate your account."
+          : "Scan this QR code with your phone to open WhatsApp and verify your number."}
       </p>
 
-      {/* Code display */}
-      <div className="flex items-center justify-center mb-6">
-        <div className="flex gap-2.5">
-          {code.split("").map((digit, i) => (
-            <div
-              key={i}
-              className="w-12 h-14 rounded-xl border border-[var(--color-warm)]/20 bg-[var(--color-warm)]/[0.04] flex items-center justify-center"
-            >
-              <span className="text-[24px] font-medium text-[var(--color-warm)]" style={{ fontFamily: "var(--font-serif)" }}>
-                {digit}
-              </span>
+      {isMobile ? (
+        <>
+          {/* Code display */}
+          <div className="flex items-center justify-center mb-6">
+            <div className="flex gap-2.5">
+              {code.split("").map((digit, i) => (
+                <div
+                  key={i}
+                  className="w-12 h-14 rounded-xl border border-[var(--color-warm)]/20 bg-[var(--color-warm)]/[0.04] flex items-center justify-center"
+                >
+                  <span className="text-[24px] font-medium text-[var(--color-warm)]" style={{ fontFamily: "var(--font-serif)" }}>
+                    {digit}
+                  </span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </div>
+          </div>
 
-      <p className="text-[12px] text-center text-[var(--color-text-muted)] font-light mb-6">
-        Texting <span className="text-[var(--color-text-primary)]/60 font-medium">+{phone}</span>
-      </p>
+          <p className="text-[12px] text-center text-[var(--color-text-muted)] font-light mb-6">
+            Texting <span className="text-[var(--color-text-primary)]/60 font-medium">+{phone}</span>
+          </p>
 
-      <a
-        href={waLink}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="block w-full bg-[#25D366] text-white py-3 rounded-full text-[13px] font-medium text-center hover:-translate-y-0.5 hover:shadow-[0_6px_30px_rgba(37,211,102,0.2)] transition-all"
-        onClick={onClose}
-      >
-        Open WhatsApp &amp; verify
-      </a>
+          <a
+            href={waLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block w-full bg-[#25D366] text-white py-3 rounded-full text-[13px] font-medium text-center hover:-translate-y-0.5 hover:shadow-[0_6px_30px_rgba(37,211,102,0.2)] transition-all"
+            onClick={onClose}
+          >
+            Open WhatsApp &amp; verify
+          </a>
+        </>
+      ) : (
+        <>
+          {/* QR code for desktop */}
+          <div className="flex flex-col items-center justify-center mb-6">
+            <div className="p-4 bg-white rounded-2xl">
+              <QRCodeSVG
+                value={waLink}
+                size={180}
+                level="M"
+                bgColor="#ffffff"
+                fgColor="#080B0F"
+              />
+            </div>
+            <p className="text-[12px] text-center text-[var(--color-text-muted)] font-light mt-4">
+              Your code: <span className="text-[var(--color-warm)] font-medium tracking-widest">{code}</span>
+            </p>
+          </div>
+
+          <p className="text-[12px] text-center text-[var(--color-text-muted)] font-light mb-6">
+            Verifying <span className="text-[var(--color-text-primary)]/60 font-medium">+{phone}</span>
+          </p>
+
+          <a
+            href={waLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block w-full bg-white/[0.06] text-[var(--color-text-muted)] py-3 rounded-full text-[12px] font-light text-center hover:bg-white/[0.1] hover:text-[var(--color-text-primary)] transition-all"
+            onClick={onClose}
+          >
+            Or open WhatsApp Web instead
+          </a>
+        </>
+      )}
     </>
   );
 }
@@ -571,6 +674,7 @@ export default function OnboardingModal({
                     window.open(waLink, "_blank", "noopener,noreferrer");
                     onClose();
                   }}
+                  waLink={waLink}
                 />
               )}
               {step === "phone" && <PhoneStep onNext={handlePhoneSubmit} />}

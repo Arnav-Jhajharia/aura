@@ -8,6 +8,7 @@ from tools.canvas import get_canvas_assignments, get_canvas_grades
 from tools.email import get_emails, send_email
 from tools.calendar import get_calendar_events, create_calendar_event, find_free_slots
 from tools.memory_search import search_memory
+from tools.recall_context import recall_context
 
 logger = logging.getLogger(__name__)
 
@@ -29,20 +30,47 @@ TOOL_REGISTRY: dict[str, callable] = {
     "create_calendar_event": create_calendar_event,
     "find_free_slots": find_free_slots,
     "search_memory": search_memory,
+    "recall_context": recall_context,
 }
 
 
 async def tool_executor(state: AuraState) -> dict:
-    """Execute tools requested by the intent classifier.
+    """Execute tools — either a single tool from the planner or a batch from tools_needed.
 
-    Iterates through tools_needed and calls each with user_id and entities.
-    Results are collected into tool_results.
+    In planner mode (_next_tool is set): execute one tool, append result to
+    tool_results, and return.  The planner loop will decide what to do next.
+
+    Legacy mode (tools_needed list): iterate through all requested tools.
     """
-    tools_needed = state.get("tools_needed", [])
     user_id = state["user_id"]
     entities = state.get("entities", {})
-    results = []
+    results = list(state.get("tool_results", []))
 
+    # ── Planner-driven single-tool execution ──────────────────────────
+    next_tool = state.get("_next_tool")
+    if next_tool:
+        tool_fn = TOOL_REGISTRY.get(next_tool)
+        if tool_fn is None:
+            logger.warning("Planner requested unknown tool: %s", next_tool)
+            results.append({"tool": next_tool, "error": "unknown tool"})
+        else:
+            tool_args = state.get("_next_tool_args") or {}
+            try:
+                result = await tool_fn(user_id=user_id, entities=entities, **tool_args)
+                results.append({"tool": next_tool, "result": result})
+            except Exception as e:
+                logger.exception("Tool %s failed", next_tool)
+                results.append({"tool": next_tool, "error": str(e)})
+
+        # Clear the single-tool directive so the planner can issue a new one
+        return {
+            "tool_results": results,
+            "_next_tool": None,
+            "_next_tool_args": None,
+        }
+
+    # ── Legacy batch execution (tools_needed from classifier) ─────────
+    tools_needed = state.get("tools_needed", [])
     for tool_name in tools_needed:
         tool_fn = TOOL_REGISTRY.get(tool_name)
         if tool_fn is None:

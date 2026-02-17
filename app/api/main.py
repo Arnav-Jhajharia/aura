@@ -13,9 +13,11 @@ from api.auth import router as auth_router
 from api.onboard import router as onboard_router
 from agent.graph import build_graph
 from agent.scheduler import start_scheduler, scheduler
+from db.migrations import run_startup_migrations
 from db.models import Base
 from db.session import engine
 from config import settings
+from tools.whatsapp import close_client as close_wa_client
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,9 @@ async def lifespan(app: FastAPI):
             await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Database tables verified")
+
+        # Run startup migrations for new columns
+        await run_startup_migrations(engine)
     except Exception:
         logger.exception("Failed to create tables — check DATABASE_URL")
 
@@ -60,6 +65,7 @@ async def lifespan(app: FastAPI):
     yield
 
     scheduler.shutdown(wait=False)
+    await close_wa_client()
     if app.state.pool:
         await app.state.pool.close()
     await engine.dispose()

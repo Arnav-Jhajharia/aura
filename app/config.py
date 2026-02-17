@@ -7,12 +7,13 @@ class Settings(BaseSettings):
 
     # Supabase Postgres
     # Session mode pooler URL with asyncpg driver (for SQLAlchemy)
-    database_url: str = "postgresql+asyncpg://postgres.xxx:password@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
+    database_url: str
     # Direct connection URL with psycopg driver (for LangGraph checkpointer)
-    database_url_direct: str = "postgresql://postgres.xxx:password@db.xxx.supabase.co:5432/postgres"
+    database_url_direct: str
 
     # Public API base URL (used to generate OAuth links sent to users)
-    api_base_url: str = "https://41ac-149-88-106-148.ngrok-free.app"
+    # Must be set in .env when running with ngrok/production — OAuth links will be empty otherwise
+    api_base_url: str = ""
 
     # WhatsApp
     whatsapp_token: str = ""

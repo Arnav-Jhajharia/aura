@@ -100,6 +100,8 @@ class Signal:
         }
         medium = {
             SignalType.CALENDAR_GAP_DETECTED,
+            SignalType.CALENDAR_BUSY_DAY,
+            SignalType.CALENDAR_EMPTY_DAY,
             SignalType.TASK_OVERDUE,
             SignalType.TASK_DUE_TODAY,
             SignalType.MOOD_TREND_DOWN,

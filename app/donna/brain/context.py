@@ -5,27 +5,37 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from db.models import ChatMessage, Expense, MemoryFact, MoodLog, Task, User
+from db.models import ChatMessage, Expense, MoodLog, Task
 from db.session import async_session
+from donna.brain.feedback import get_feedback_summary
 from donna.brain.rules import count_proactive_today
 from donna.memory.recall import recall_relevant_memories
 from donna.signals.base import Signal
+from donna.user_model import get_user_snapshot
 
 logger = logging.getLogger(__name__)
 
 
-async def build_context(user_id: str, signals: list[Signal]) -> dict:
+async def build_context(
+    user_id: str,
+    signals: list[Signal],
+    *,
+    trust_info: dict | None = None,
+) -> dict:
     """Build a complete context window for the brain's LLM call.
 
     Returns a dict with everything Donna needs to decide what to say:
-    - user profile
+    - user profile (from unified snapshot)
+    - entities (from unified snapshot)
+    - behaviors (from unified snapshot)
+    - memory facts (from unified snapshot)
     - current signals
     - recent conversation
-    - memory facts
     - pending tasks
     - recent mood
     - today's spending
     - current time info
+    - trust_info (trust level and config)
     """
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -41,22 +51,30 @@ async def build_context(user_id: str, signals: list[Signal]) -> dict:
         for s in signals
     ]
 
+    # ── Unified user snapshot (profile, entities, behaviors, memory facts) ──
+    try:
+        snapshot = await get_user_snapshot(user_id)
+    except Exception:
+        logger.exception("Failed to load user snapshot for %s", user_id)
+        snapshot = {}
+
+    if not snapshot:
+        return context
+
+    context["user"] = snapshot.get("profile", {})
+    context["user_stats"] = snapshot.get("stats", {})
+
+    entities = snapshot.get("entities", {})
+    context["key_people"] = entities.get("people", [])
+    context["key_places"] = entities.get("places", [])
+    context["recent_entities"] = entities.get("recent", [])
+
+    context["user_behaviors"] = snapshot.get("behaviors", {})
+    context["memory_facts"] = snapshot.get("memory_facts", [])
+
+    # ── Context-specific queries (not part of user model) ──────────────
+
     async with async_session() as session:
-        # ── User profile ─────────────────────────────────────────────
-        user_result = await session.execute(select(User).where(User.id == user_id))
-        user = user_result.scalar_one_or_none()
-        if not user:
-            return context
-
-        context["user"] = {
-            "name": user.name or "",
-            "timezone": user.timezone or "UTC",
-            "wake_time": user.wake_time or "08:00",
-            "sleep_time": user.sleep_time or "23:00",
-            "reminder_frequency": user.reminder_frequency or "normal",
-            "tone_preference": user.tone_preference or "casual",
-        }
-
         # ── Recent conversation (last 10 messages) ───────────────────
         history_result = await session.execute(
             select(ChatMessage)
@@ -88,19 +106,6 @@ async def build_context(user_id: str, signals: list[Signal]) -> dict:
             )
         else:
             context["minutes_since_last_message"] = None
-
-        # ── Memory facts ─────────────────────────────────────────────
-        facts_result = await session.execute(
-            select(MemoryFact)
-            .where(MemoryFact.user_id == user_id)
-            .order_by(MemoryFact.created_at.desc())
-            .limit(20)
-        )
-        facts = facts_result.scalars().all()
-        context["memory_facts"] = [
-            {"fact": f.fact, "category": f.category}
-            for f in facts
-        ]
 
         # ── Pending tasks ────────────────────────────────────────────
         tasks_result = await session.execute(
@@ -156,5 +161,44 @@ async def build_context(user_id: str, signals: list[Signal]) -> dict:
     except Exception:
         logger.exception("Memory recall failed for user %s", user_id)
         context["recalled_memories"] = []
+
+    # ── Behavioral patterns from memory facts ─────────────────────────
+    context["behavioral_patterns"] = [
+        f["fact"] for f in context.get("memory_facts", [])
+        if f.get("category") == "pattern"
+    ]
+
+    # ── Feedback summary ─────────────────────────────────────────────
+    try:
+        context["feedback_summary"] = await get_feedback_summary(user_id)
+    except Exception:
+        logger.exception("Feedback summary failed for user %s", user_id)
+        context["feedback_summary"] = {}
+
+    # ── Trust info (from prefilter) ───────────────────────────────────
+    if trust_info:
+        context["trust_info"] = trust_info
+        context["score_threshold"] = trust_info.get("score_threshold", 5.5)
+
+    # ── Feedback-derived preferences (from nightly reflection) ─────────
+    behaviors = context.get("user_behaviors", {})
+    if behaviors.get("category_preferences"):
+        context["category_preferences"] = behaviors["category_preferences"]
+    if behaviors.get("engagement_trends"):
+        context["engagement_trends"] = behaviors["engagement_trends"]
+    if behaviors.get("format_preferences"):
+        context["format_preferences"] = behaviors["format_preferences"]
+    if behaviors.get("send_time_preferences"):
+        context["send_time_preferences"] = behaviors["send_time_preferences"]
+    if behaviors.get("category_suppression"):
+        context["category_suppression"] = behaviors["category_suppression"]
+    # Meta-feedback overrides (from explicit user feedback)
+    if behaviors.get("meta_format_preference"):
+        context["meta_format_preference"] = behaviors["meta_format_preference"]
+    # Suppressed categories from prefilter (trust_info carries it)
+    if trust_info and trust_info.get("suppressed_categories"):
+        context.setdefault("category_suppression", {}).setdefault("suppressed", {}).update(
+            trust_info["suppressed_categories"]
+        )
 
     return context
