@@ -51,24 +51,24 @@ class User(Base):
     avg_response_latency_seconds = Column(Float, nullable=True)
     last_active_at = Column(DateTime, nullable=True)
 
-    oauth_tokens = relationship("OAuthToken", back_populates="user")
-    tasks = relationship("Task", back_populates="user")
-    journal_entries = relationship("JournalEntry", back_populates="user")
-    voice_notes = relationship("VoiceNote", back_populates="user")
-    mood_logs = relationship("MoodLog", back_populates="user")
-    expenses = relationship("Expense", back_populates="user")
-    habits = relationship("Habit", back_populates="user")
-    memory_facts = relationship("MemoryFact", back_populates="user")
-    chat_messages = relationship("ChatMessage", back_populates="user")
-    entities = relationship("UserEntity", back_populates="user")
-    behaviors = relationship("UserBehavior", back_populates="user")
+    oauth_tokens = relationship("OAuthToken", back_populates="user", cascade="all, delete-orphan")
+    tasks = relationship("Task", back_populates="user", cascade="all, delete-orphan")
+    journal_entries = relationship("JournalEntry", back_populates="user", cascade="all, delete-orphan")
+    voice_notes = relationship("VoiceNote", back_populates="user", cascade="all, delete-orphan")
+    mood_logs = relationship("MoodLog", back_populates="user", cascade="all, delete-orphan")
+    expenses = relationship("Expense", back_populates="user", cascade="all, delete-orphan")
+    habits = relationship("Habit", back_populates="user", cascade="all, delete-orphan")
+    memory_facts = relationship("MemoryFact", back_populates="user", cascade="all, delete-orphan")
+    chat_messages = relationship("ChatMessage", back_populates="user", cascade="all, delete-orphan")
+    entities = relationship("UserEntity", back_populates="user", cascade="all, delete-orphan")
+    behaviors = relationship("UserBehavior", back_populates="user", cascade="all, delete-orphan")
 
 
 class OAuthToken(Base):
     __tablename__ = "oauth_tokens"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     provider = Column(String, nullable=False)  # canvas, google, microsoft
     access_token = Column(Text, nullable=False)  # encrypted at rest
     refresh_token = Column(Text)
@@ -82,7 +82,7 @@ class Task(Base):
     __tablename__ = "tasks"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     title = Column(String, nullable=False)
     description = Column(Text)
     source = Column(String, default="manual")  # manual, canvas, email
@@ -100,7 +100,7 @@ class JournalEntry(Base):
     __tablename__ = "journal_entries"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     entry_type = Column(String, nullable=False)  # reflection, gratitude, brain_dump, vent
     content = Column(Text, nullable=False)
     mood_score = Column(Integer)  # 1-10
@@ -114,7 +114,7 @@ class VoiceNote(Base):
     __tablename__ = "voice_notes"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     audio_url = Column(String, nullable=False)
     duration_seconds = Column(Integer)
     transcript = Column(Text)
@@ -131,7 +131,7 @@ class MoodLog(Base):
     __tablename__ = "mood_logs"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     score = Column(Integer, nullable=False)  # 1-10
     note = Column(Text)
     source = Column(String, default="manual")  # manual, reflection, inferred
@@ -144,7 +144,7 @@ class Expense(Base):
     __tablename__ = "expenses"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     amount = Column(Float, nullable=False)
     currency = Column(String, default="USD")
     category = Column(String)
@@ -158,7 +158,7 @@ class Habit(Base):
     __tablename__ = "habits"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     name = Column(String, nullable=False)
     target_frequency = Column(String, default="daily")
     current_streak = Column(Integer, default=0)
@@ -173,7 +173,7 @@ class ChatMessage(Base):
     __tablename__ = "chat_messages"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     role = Column(String, nullable=False)  # "user" | "assistant"
     content = Column(Text, nullable=False)
     is_proactive = Column(Boolean, default=False)
@@ -187,7 +187,7 @@ class MemoryFact(Base):
     __tablename__ = "memory_facts"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     fact = Column(Text, nullable=False)
     category = Column(String)  # preference, pattern, context, relationship
     confidence = Column(Float, default=0.8)
@@ -206,7 +206,7 @@ class UserEntity(Base):
     )
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     entity_type = Column(String, nullable=False)  # person, place, task, idea, event, preference
     name = Column(String, nullable=False)
     name_normalized = Column(String, nullable=False)  # lowercase stripped for dedup
@@ -226,7 +226,7 @@ class UserBehavior(Base):
     )
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     behavior_key = Column(String, nullable=False)
     value = Column(JSON, nullable=False)
     confidence = Column(Float, default=0.5)
@@ -244,7 +244,7 @@ class SignalState(Base):
     )
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     dedup_key = Column(String, nullable=False)
     signal_type = Column(String, nullable=False)
     first_seen = Column(DateTime, default=datetime.utcnow)
@@ -258,7 +258,7 @@ class ProactiveFeedback(Base):
     __tablename__ = "proactive_feedback"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     message_id = Column(String, nullable=False)
     category = Column(String)
     trigger_signals = Column(JSON)
@@ -279,7 +279,7 @@ class DeferredInsight(Base):
     __tablename__ = "deferred_insights"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     category = Column(String)
     message_draft = Column(Text)
     trigger_signals = Column(JSON)
@@ -293,7 +293,7 @@ class DeferredSend(Base):
     __tablename__ = "deferred_sends"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     candidate_json = Column(JSON, nullable=False)
     block_reason = Column(String)
     scheduled_for = Column(DateTime, nullable=False)

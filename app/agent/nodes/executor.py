@@ -4,9 +4,18 @@ from agent.state import AuraState
 from tools.tasks import create_task, complete_task, get_tasks
 from tools.journal import save_journal_entry, log_mood, get_mood_history
 from tools.expenses import log_expense, get_expense_summary
-from tools.canvas import get_canvas_assignments, get_canvas_grades
-from tools.email import get_emails, send_email
-from tools.calendar import get_calendar_events, create_calendar_event, find_free_slots
+from tools.canvas import (
+    get_canvas_assignments, get_canvas_courses, get_canvas_grades,
+    get_canvas_announcements, get_canvas_course_info,
+    get_canvas_submission_status,
+)
+from tools.email import get_emails, send_email, get_email_detail, reply_to_email
+from tools.calendar import (
+    get_calendar_events, create_calendar_event, find_free_slots,
+    delete_calendar_event, update_calendar_event,
+)
+from tools.voice import search_voice_notes, get_voice_note_summary
+from tools.nusmods import sync_nusmods_to_calendar
 from tools.memory_search import search_memory
 from tools.recall_context import recall_context
 
@@ -23,12 +32,23 @@ TOOL_REGISTRY: dict[str, callable] = {
     "log_expense": log_expense,
     "get_expense_summary": get_expense_summary,
     "canvas_assignments": get_canvas_assignments,
+    "canvas_courses": get_canvas_courses,
     "canvas_grades": get_canvas_grades,
+    "canvas_announcements": get_canvas_announcements,
+    "canvas_course_info": get_canvas_course_info,
+    "canvas_submission_status": get_canvas_submission_status,
     "get_emails": get_emails,
     "send_email": send_email,
+    "get_email_detail": get_email_detail,
+    "reply_to_email": reply_to_email,
     "get_calendar_events": get_calendar_events,
     "create_calendar_event": create_calendar_event,
     "find_free_slots": find_free_slots,
+    "delete_calendar_event": delete_calendar_event,
+    "update_calendar_event": update_calendar_event,
+    "search_voice_notes": search_voice_notes,
+    "get_voice_note_summary": get_voice_note_summary,
+    "sync_nusmods_to_calendar": sync_nusmods_to_calendar,
     "search_memory": search_memory,
     "recall_context": recall_context,
 }

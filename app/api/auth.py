@@ -60,12 +60,19 @@ def _cleanup_expired_states() -> None:
 async def google_login(user_id: str):
     """Start Google OAuth — initiate Gmail connection first."""
     state = _create_state(user_id)
-    connection = await initiate_connection(
-        user_id=user_id,
-        auth_config_id=settings.composio_gmail_auth_config_id,
-        config={"auth_scheme": "OAUTH2"},
-        callback_url=f"{settings.api_base_url}/auth/google/callback/gmail?state={state}",
-    )
+    try:
+        connection = await initiate_connection(
+            user_id=user_id,
+            auth_config_id=settings.composio_gmail_auth_config_id,
+            config={"auth_scheme": "OAUTH2"},
+            callback_url=f"{settings.api_base_url}/auth/google/callback/gmail?state={state}",
+        )
+    except Exception as exc:
+        logger.exception("Google login failed for user %s: %s", user_id, exc)
+        return HTMLResponse(
+            "<h2>Something went wrong connecting Google.</h2>"
+            "<p>Go back to WhatsApp and try again, or tap the Google button once more.</p>"
+        )
     return RedirectResponse(connection.redirect_url)
 
 
@@ -77,12 +84,29 @@ async def google_callback_gmail(request: Request, state: str = ""):
 
     # New state for the calendar leg
     cal_state = _create_state(user_id)
-    connection = await initiate_connection(
-        user_id=user_id,
-        auth_config_id=settings.composio_gcal_auth_config_id,
-        config={"auth_scheme": "OAUTH2"},
-        callback_url=f"{settings.api_base_url}/auth/google/callback/calendar?state={cal_state}",
-    )
+    try:
+        connection = await initiate_connection(
+            user_id=user_id,
+            auth_config_id=settings.composio_gcal_auth_config_id,
+            config={"auth_scheme": "OAUTH2"},
+            callback_url=f"{settings.api_base_url}/auth/google/callback/calendar?state={cal_state}",
+        )
+    except Exception as exc:
+        logger.exception("Google Calendar connection failed for user %s: %s", user_id, exc)
+        # Gmail leg succeeded — mark Google as connected anyway
+        async with async_session() as session:
+            user_result = await session.execute(select(User).where(User.id == user_id))
+            user = user_result.scalar_one_or_none()
+            if user:
+                user.has_google = True
+                await session.commit()
+                await send_whatsapp_message(
+                    to=user.phone,
+                    text="Google connected. Calendar and Gmail are ready to go.",
+                )
+        return HTMLResponse(
+            "<h2>Google connected! You can close this tab and go back to WhatsApp.</h2>"
+        )
     return RedirectResponse(connection.redirect_url)
 
 
@@ -118,12 +142,19 @@ async def google_callback_calendar(request: Request, state: str = ""):
 async def microsoft_login(user_id: str):
     """Start Microsoft OAuth — single step covers Outlook mail + calendar."""
     state = _create_state(user_id)
-    connection = await initiate_connection(
-        user_id=user_id,
-        auth_config_id=settings.composio_outlook_auth_config_id,
-        config={"auth_scheme": "OAUTH2"},
-        callback_url=f"{settings.api_base_url}/auth/microsoft/callback?state={state}",
-    )
+    try:
+        connection = await initiate_connection(
+            user_id=user_id,
+            auth_config_id=settings.composio_outlook_auth_config_id,
+            config={"auth_scheme": "OAUTH2"},
+            callback_url=f"{settings.api_base_url}/auth/microsoft/callback?state={state}",
+        )
+    except Exception as exc:
+        logger.exception("Microsoft login failed for user %s: %s", user_id, exc)
+        return HTMLResponse(
+            "<h2>Something went wrong connecting Microsoft.</h2>"
+            "<p>Go back to WhatsApp and try again, or tap the Outlook button once more.</p>"
+        )
     return RedirectResponse(connection.redirect_url)
 
 

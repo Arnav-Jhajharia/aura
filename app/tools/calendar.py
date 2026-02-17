@@ -243,3 +243,92 @@ async def find_free_slots(user_id: str, entities: dict = None, **kwargs) -> list
             })
 
     return free_slots
+
+
+async def delete_calendar_event(user_id: str, entities: dict = None, **kwargs) -> dict:
+    """Delete a calendar event by event_id."""
+    provider = await get_email_provider(user_id)
+    if not provider:
+        return {"error": "Calendar not connected."}
+
+    event_id = kwargs.get("event_id", "")
+    if not event_id:
+        return {"error": "No event_id provided."}
+
+    if provider == "microsoft":
+        result = await execute_tool(
+            slug="OUTLOOK_CALENDAR_DELETE_EVENT",
+            user_id=user_id,
+            arguments={"event_id": event_id},
+        )
+    else:
+        result = await execute_tool(
+            slug="GOOGLECALENDAR_DELETE_EVENT",
+            user_id=user_id,
+            arguments={"calendar_id": "primary", "event_id": event_id},
+        )
+
+    if not result.get("successful"):
+        return {"error": f"Failed to delete event: {result.get('error', 'Unknown')}"}
+
+    return {"success": True}
+
+
+async def update_calendar_event(user_id: str, entities: dict = None, **kwargs) -> dict:
+    """Update an existing calendar event (title, time, description, location).
+
+    Pass event_id and any fields to update: title, start, end, description, location.
+    """
+    provider = await get_email_provider(user_id)
+    if not provider:
+        return {"error": "Calendar not connected."}
+
+    event_id = kwargs.get("event_id", "")
+    if not event_id:
+        return {"error": "No event_id provided."}
+
+    title = kwargs.get("title")
+    start = kwargs.get("start")
+    end = kwargs.get("end")
+    description = kwargs.get("description")
+    location = kwargs.get("location")
+
+    if provider == "microsoft":
+        arguments = {"event_id": event_id}
+        if title:
+            arguments["subject"] = title
+        if start:
+            arguments["start"] = {"dateTime": start, "timeZone": "UTC"}
+        if end:
+            arguments["end"] = {"dateTime": end, "timeZone": "UTC"}
+        if description:
+            arguments["body"] = {"contentType": "text", "content": description}
+        if location:
+            arguments["location"] = {"displayName": location}
+        result = await execute_tool(
+            slug="OUTLOOK_CALENDAR_UPDATE_EVENT",
+            user_id=user_id,
+            arguments=arguments,
+        )
+    else:
+        arguments = {"calendar_id": "primary", "event_id": event_id}
+        if title:
+            arguments["summary"] = title
+        if start:
+            arguments["start"] = {"dateTime": start, "timeZone": "UTC"}
+        if end:
+            arguments["end"] = {"dateTime": end, "timeZone": "UTC"}
+        if description:
+            arguments["description"] = description
+        if location:
+            arguments["location"] = location
+        result = await execute_tool(
+            slug="GOOGLECALENDAR_UPDATE_EVENT",
+            user_id=user_id,
+            arguments=arguments,
+        )
+
+    if not result.get("successful"):
+        return {"error": f"Failed to update event: {result.get('error', 'Unknown')}"}
+
+    return {"success": True}
