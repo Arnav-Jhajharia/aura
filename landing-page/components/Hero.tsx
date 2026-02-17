@@ -1,420 +1,379 @@
 "use client";
 
-import { useRef, useEffect } from "react";
-import { useOnboarding } from "./OnboardingProvider";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { motion } from "framer-motion";
+import { useVisitorData } from "@/hooks/useVisitorData";
 
-function useScrollUnderline() {
-  const pathRef = useRef<SVGPathElement>(null);
-
-  useEffect(() => {
-    const path = pathRef.current;
-    if (!path) return;
-
-    const totalLength = path.getTotalLength();
-    path.style.strokeDasharray = `${totalLength}`;
-    path.style.strokeDashoffset = `${totalLength}`;
-
-    function onScroll() {
-      const progress = Math.min(1, window.scrollY / 300);
-      path!.style.strokeDashoffset = `${totalLength * (1 - progress)}`;
-    }
-
-    window.addEventListener("scroll", onScroll, { passive: true });
-    onScroll();
-
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  return pathRef;
+interface HeroProps {
+  onComplete: () => void;
 }
 
-// --- Step 1: Thought text pool + Fragment type ---
-const THOUGHT_TEXTS = [
-  "rent??", "gym 7am", "call mom", "deadline fri", "groceries",
-  "dentist tue", "reply to Jake", "book flights", "water plants",
-  "submit report", "pick up meds", "lunch w/ Sara", "oil change",
-  "birthday gift", "pay electric", "read ch. 4", "cancel sub",
-  "backup photos", "team sync 3pm", "buy milk", "fix bike",
-  "email prof", "laundry", "renew passport", "return package",
-  "yoga 6pm", "call plumber", "update resume", "clean fridge",
-  "vet appt", "send invoice", "buy charger",
-];
+export default function Hero({ onComplete }: HeroProps) {
+  const visitorData = useVisitorData();
 
-interface Fragment {
-  x: number;
-  baseY: number;
-  vx: number;
-  wobbleAmp: number;
-  wobbleFreq: number;
-  wobblePhase: number;
-  rotation: number;
-  baseOpacity: number;
-  scale: number;
-  waveTarget: number;
-  cacheIndex: number;
-}
+  // --- instant reveal for returning visitors / reduced motion ---
+  const [instantReveal, setInstantReveal] = useState(false);
 
-// Each component wave = a "thread" of your life
-const WAVES = [
-  { freq: 0.003, amp: 30, speed: 0.4,  phase: 0,   color: [196, 149, 106] as const, label: "calendar" },
-  { freq: 0.005, amp: 22, speed: 0.55, phase: 1.3, color: [206, 169, 136] as const, label: "deadlines" },
-  { freq: 0.008, amp: 15, speed: 0.75, phase: 2.7, color: [176, 149, 126] as const, label: "ideas" },
-  { freq: 0.013, amp: 10, speed: 1.0,  phase: 0.8, color: [186, 139, 116] as const, label: "reminders" },
-  { freq: 0.021, amp: 6,  speed: 1.4,  phase: 3.5, color: [166, 159, 136] as const, label: "messages" },
-];
+  // --- sequence state ---
+  const [visibleCount, setVisibleCount] = useState(0);
+  const [dimmed, setDimmed] = useState(false);
+  const [turnVisible, setTurnVisible] = useState(false);
 
-export default function Hero() {
-  const heroRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const pathRef = useScrollUnderline();
-  const openOnboarding = useOnboarding();
+  // --- reveal state ---
+  const [showReveal, setShowReveal] = useState(false);
+  const [wordmarkVisible, setWordmarkVisible] = useState(false);
+  const [subtextVisible, setSubtextVisible] = useState(false);
+  const [ctaVisible, setCtaVisible] = useState(false);
 
+  const [skipVisible, setSkipVisible] = useState(false);
+  const [sequenceComplete, setSequenceComplete] = useState(false);
+
+  const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const sequenceStartedRef = useRef(false);
+
+  // --- check returning visitor + reduced motion on mount ---
   useEffect(() => {
-    const hero = heroRef.current!;
-    const canvas = canvasRef.current!;
-    const ctx = canvas.getContext("2d")!;
-    let W = 0, H = 0;
-    let lastTime = 0;
+    const isReturning = !!localStorage.getItem("donna_hero_seen");
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
 
-    // --- Step 2: Pill cache ---
-    let pillCache: HTMLCanvasElement[] = [];
+    if (isReturning || reducedMotion) {
+      setInstantReveal(true);
+      setShowReveal(true);
+      setWordmarkVisible(true);
+      setSubtextVisible(true);
+      setCtaVisible(true);
+      setSequenceComplete(true);
+      onComplete();
+    }
+  }, [onComplete]);
 
-    function buildPillCache() {
-      pillCache = THOUGHT_TEXTS.map((text) => {
-        const offscreen = document.createElement("canvas");
-        const oc = offscreen.getContext("2d")!;
-        const dpr = window.devicePixelRatio || 1;
+  // --- compute observation lines ---
+  const lines = useMemo(() => {
+    if (visitorData.isLoading) return [];
 
-        oc.font = "500 11px 'DM Sans', sans-serif";
-        const metrics = oc.measureText(text);
-        const textW = metrics.width;
-        const pillH = 24;
-        const hPad = 9;
-        const pillW = textW + hPad * 2;
+    const result: string[] = [];
 
-        offscreen.width = Math.ceil(pillW * dpr);
-        offscreen.height = Math.ceil(pillH * dpr);
-        oc.scale(dpr, dpr);
-
-        // Rounded rect fill
-        const r = pillH / 2;
-        oc.beginPath();
-        oc.moveTo(r, 0);
-        oc.lineTo(pillW - r, 0);
-        oc.arc(pillW - r, r, r, -Math.PI / 2, Math.PI / 2);
-        oc.lineTo(r, pillH);
-        oc.arc(r, r, r, Math.PI / 2, -Math.PI / 2);
-        oc.closePath();
-        oc.fillStyle = "rgba(196,149,106,0.12)";
-        oc.fill();
-
-        // Text
-        oc.font = "500 11px 'DM Sans', sans-serif";
-        oc.textAlign = "center";
-        oc.textBaseline = "middle";
-        oc.fillStyle = "rgba(196,149,106,0.85)";
-        oc.fillText(text, pillW / 2, pillH / 2);
-
-        return offscreen;
-      });
+    if (visitorData.city) {
+      result.push(`You're in ${visitorData.city}.`);
     }
 
-    // --- Step 3: Fragment pool ---
-    let fragments: Fragment[] = [];
-    let fragmentCount = 45;
+    const timeLine = visitorData.timeCommentary
+      ? `It's ${visitorData.timeString}. ${visitorData.timeCommentary}`
+      : `It's ${visitorData.timeString}.`;
+    result.push(timeLine);
 
-    function randRange(min: number, max: number) {
-      return min + Math.random() * (max - min);
+    result.push(visitorData.deviceLine);
+
+    result.push("You have something due this week you haven't started.");
+    result.push("There's a message you keep meaning to reply to.");
+    result.push("You had an idea last week you've already forgotten.");
+    result.push("You told yourself this semester would be different.");
+
+    return result;
+  }, [visitorData]);
+
+  const phase1Count = useMemo(() => {
+    if (visitorData.isLoading) return 0;
+    return visitorData.city ? 3 : 2;
+  }, [visitorData.city, visitorData.isLoading]);
+
+  const turnLine = "What if someone was actually paying attention?";
+
+  // --- build & run the timeline ---
+  const startSequence = useCallback(() => {
+    if (instantReveal || lines.length === 0) return;
+
+    const ids: ReturnType<typeof setTimeout>[] = [];
+    const schedule = (ms: number, fn: () => void) => {
+      ids.push(setTimeout(fn, ms));
+    };
+
+    // absolute timeline
+    let t = 1000; // initial black-screen hold
+
+    // Phase 1: real-data lines
+    for (let i = 0; i < phase1Count; i++) {
+      if (i > 0) t += i === 1 ? 1200 : 1000;
+      const idx = i + 1;
+      schedule(t, () => setVisibleCount(idx));
     }
 
-    function initFragment(staggerX?: number): Fragment {
-      const isMobile = W < 768;
-      return {
-        x: staggerX !== undefined ? staggerX : randRange(-80, 0),
-        baseY: randRange(H * 0.1, H * 0.9),
-        vx: isMobile ? randRange(25, 50) : randRange(18, 40),
-        wobbleAmp: randRange(8, 28),
-        wobbleFreq: randRange(0.4, 1.2),
-        wobblePhase: Math.random() * Math.PI * 2,
-        rotation: randRange(-0.35, 0.35),
-        baseOpacity: randRange(0.08, 0.22),
-        scale: randRange(0.7, 1.3),
-        waveTarget: Math.floor(Math.random() * WAVES.length),
-        cacheIndex: Math.floor(Math.random() * THOUGHT_TEXTS.length),
-      };
+    // pause before phase 2
+    t += 1800;
+
+    // Phase 2: universal truths
+    const phase2Delays = [0, 1400, 1400, 1800];
+    for (let i = 0; i < 4; i++) {
+      t += phase2Delays[i];
+      const idx = phase1Count + i + 1;
+      schedule(t, () => setVisibleCount(idx));
     }
 
-    function initFragments() {
-      fragmentCount = W < 768 ? 25 : 45;
-      fragments = [];
-      for (let i = 0; i < fragmentCount; i++) {
-        fragments.push(initFragment(randRange(-80, W * 0.5)));
-      }
+    // pause before dim + turn
+    t += 2500;
+
+    // dim lines 1-7
+    schedule(t, () => setDimmed(true));
+
+    // turn line 200ms after dim starts
+    t += 200;
+    schedule(t, () => setTurnVisible(true));
+
+    // pause: 800ms animation + 2000ms hold
+    t += 2800;
+
+    // transition to reveal
+    schedule(t, () => setShowReveal(true));
+
+    t += 400;
+    schedule(t, () => setWordmarkVisible(true));
+
+    t += 300;
+    schedule(t, () => setSubtextVisible(true));
+
+    t += 400;
+    schedule(t, () => setCtaVisible(true));
+
+    t += 500;
+    schedule(t, () => {
+      setSequenceComplete(true);
+      localStorage.setItem("donna_hero_seen", "1");
+      onComplete();
+    });
+
+    // skip button after 3s
+    schedule(3000, () => setSkipVisible(true));
+
+    timeoutsRef.current = ids;
+  }, [instantReveal, lines, phase1Count, onComplete]);
+
+  // trigger sequence when data is ready
+  useEffect(() => {
+    if (
+      !visitorData.isLoading &&
+      !instantReveal &&
+      !sequenceStartedRef.current
+    ) {
+      sequenceStartedRef.current = true;
+      startSequence();
     }
+    return () => {
+      timeoutsRef.current.forEach(clearTimeout);
+    };
+  }, [visitorData.isLoading, instantReveal, startSequence]);
 
-    function resize() {
-      const dpr = window.devicePixelRatio || 1;
-      W = hero.offsetWidth;
-      H = hero.offsetHeight;
-      canvas.width = W * dpr;
-      canvas.height = H * dpr;
-      canvas.style.width = W + "px";
-      canvas.style.height = H + "px";
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      buildPillCache();
-      initFragments();
+  // --- skip handler ---
+  const handleSkip = useCallback(() => {
+    timeoutsRef.current.forEach(clearTimeout);
+    timeoutsRef.current = [];
+    setSkipVisible(false);
+    setDimmed(true);
+    setShowReveal(true);
+
+    const ids: ReturnType<typeof setTimeout>[] = [];
+    ids.push(setTimeout(() => setWordmarkVisible(true), 100));
+    ids.push(setTimeout(() => setSubtextVisible(true), 200));
+    ids.push(setTimeout(() => setCtaVisible(true), 300));
+    ids.push(
+      setTimeout(() => {
+        setSequenceComplete(true);
+        localStorage.setItem("donna_hero_seen", "1");
+        onComplete();
+      }, 500)
+    );
+    timeoutsRef.current = ids;
+  }, [onComplete]);
+
+  // --- body scroll lock ---
+  useEffect(() => {
+    if (!sequenceComplete) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
     }
-    resize();
-    window.addEventListener("resize", resize);
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [sequenceComplete]);
 
-    function waveY(wave: (typeof WAVES)[number], x: number, time: number) {
-      const ampMod = 1 + 0.15 * Math.sin(time * 0.3 + wave.phase);
-      return Math.sin(x * wave.freq - time * wave.speed + wave.phase) * wave.amp * ampMod;
-    }
-
-    function loop(now: number) {
-      const time = now / 1000;
-      const dt = lastTime === 0 ? 0.016 : Math.min((now - lastTime) / 1000, 0.05);
-      lastTime = now;
-
-      ctx.clearRect(0, 0, W, H);
-
-      const centerY = H / 2;
-      const numWaves = WAVES.length;
-      const maxSpread = H * 0.4;
-
-      // --- Step 4 & 5: Update & render fragments (BEFORE waves) ---
-      for (let i = 0; i < fragments.length; i++) {
-        const f = fragments[i];
-
-        // Physics update
-        f.x += f.vx * dt;
-
-        const nx = f.x / W; // normalized x [0..1]
-
-        // Vertical wobble
-        let currentY = f.baseY + Math.sin(time * f.wobbleFreq + f.wobblePhase) * f.wobbleAmp;
-        let currentRotation = f.rotation;
-
-        // Transition zone (>30%): attraction toward wave lane
-        if (nx > 0.3) {
-          const t = Math.min(1, (nx - 0.3) / 0.35); // 0→1 across transition
-          const ease = t * t;
-
-          // Dampen wobble
-          const dampedAmp = f.wobbleAmp * (1 - ease * 0.9);
-          currentY = f.baseY + Math.sin(time * f.wobbleFreq + f.wobblePhase) * dampedAmp;
-
-          // Decay rotation
-          currentRotation = f.rotation * (1 - ease);
-
-          // Attract baseY toward wave target lane
-          const wi = f.waveTarget;
-          const normalizedOffset = (wi - (numWaves - 1) / 2) / ((numWaves - 1) / 2);
-          const spreadTarget = normalizedOffset * maxSpread / 2;
-          const waveTargetY = centerY + spreadTarget * ((f.x / W) ** 2) + waveY(WAVES[wi], f.x, time);
-          f.baseY += (waveTargetY - f.baseY) * ease * 0.08;
-        }
-
-        // Recycle when past 65%
-        if (f.x > W * 0.65) {
-          fragments[i] = initFragment();
-          continue;
-        }
-
-        // Compute opacity
-        let opacity = f.baseOpacity;
-
-        // Fade-in from left edge
-        if (f.x < 40) {
-          opacity *= Math.max(0, f.x / 40);
-        }
-
-        // Quadratic fade-out through transition zone
-        if (nx > 0.3) {
-          const t = (nx - 0.3) / 0.35;
-          opacity *= Math.max(0, 1 - t * t);
-        }
-
-        // Edge-fade near top/bottom
-        const edgeDist = Math.min(currentY, H - currentY);
-        if (edgeDist < 60) {
-          opacity *= Math.max(0, edgeDist / 60);
-        }
-
-        if (opacity < 0.005) continue;
-
-        // Render pill
-        const pill = pillCache[f.cacheIndex];
-        if (!pill) continue;
-
-        const dpr = window.devicePixelRatio || 1;
-        const drawW = pill.width / dpr;
-        const drawH = pill.height / dpr;
-
-        ctx.save();
-        ctx.globalAlpha = opacity;
-        ctx.translate(f.x, currentY);
-        ctx.rotate(currentRotation);
-        ctx.scale(f.scale, f.scale);
-        ctx.drawImage(pill, -drawW / 2, -drawH / 2, drawW, drawH);
-        ctx.restore();
-      }
-
-      ctx.globalAlpha = 1;
-
-      // --- Step 6: Composite waveform (modified gradient) ---
-      const compGrad = ctx.createLinearGradient(0, 0, W, 0);
-      compGrad.addColorStop(0, "rgba(196,149,106,0.0)");
-      compGrad.addColorStop(0.2, "rgba(196,149,106,0.04)");
-      compGrad.addColorStop(0.4, "rgba(196,149,106,0.14)");
-      compGrad.addColorStop(0.55, "rgba(196,149,106,0.06)");
-      compGrad.addColorStop(0.75, "rgba(196,149,106,0.0)");
-
-      ctx.beginPath();
-      for (let x = 0; x <= W; x += 2) {
-        let y = centerY;
-        for (const wave of WAVES) y += waveY(wave, x, time);
-        if (x === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.strokeStyle = compGrad;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      // --- Individual decomposed waves (modified gradient) ---
-      for (let wi = 0; wi < numWaves; wi++) {
-        const wave = WAVES[wi];
-        const normalizedOffset = (wi - (numWaves - 1) / 2) / ((numWaves - 1) / 2);
-        const spreadTarget = normalizedOffset * maxSpread / 2;
-
-        const [r, g, b] = wave.color;
-
-        // Step 6: Individual wave gradient — invisible left, emerging through transition
-        const grad = ctx.createLinearGradient(0, 0, W, 0);
-        grad.addColorStop(0, `rgba(${r},${g},${b},0.0)`);
-        grad.addColorStop(0.25, `rgba(${r},${g},${b},0.0)`);
-        grad.addColorStop(0.4, `rgba(${r},${g},${b},0.06)`);
-        grad.addColorStop(0.55, `rgba(${r},${g},${b},0.14)`);
-        grad.addColorStop(0.75, `rgba(${r},${g},${b},0.22)`);
-        grad.addColorStop(1, `rgba(${r},${g},${b},0.28)`);
-
-        ctx.beginPath();
-        for (let x = 0; x <= W; x += 2) {
-          const sep = (x / W) ** 2;
-          const yOffset = spreadTarget * sep;
-          const y = centerY + yOffset + waveY(wave, x, time);
-          if (x === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.strokeStyle = grad;
-
-        // Soft glow pass
-        ctx.lineWidth = 6;
-        ctx.globalAlpha = 0.3;
-        ctx.stroke();
-
-        // Crisp line pass
-        ctx.lineWidth = 1.5;
-        ctx.globalAlpha = 1;
-        ctx.stroke();
-
-        // Step 7: Bloom glow pass on right-side waves
-        const bloomGrad = ctx.createLinearGradient(0, 0, W, 0);
-        bloomGrad.addColorStop(0, `rgba(${r},${g},${b},0.0)`);
-        bloomGrad.addColorStop(0.6, `rgba(${r},${g},${b},0.0)`);
-        bloomGrad.addColorStop(0.8, `rgba(${r},${g},${b},0.06)`);
-        bloomGrad.addColorStop(1, `rgba(${r},${g},${b},0.10)`);
-        ctx.strokeStyle = bloomGrad;
-        ctx.lineWidth = 12;
-        ctx.globalAlpha = 1;
-        ctx.stroke();
-
-        ctx.globalAlpha = 1;
-
-        // Label at the right edge, hugging the wave
-        const labelX = W - 14;
-        const labelY = centerY + spreadTarget + waveY(wave, W, time);
-        ctx.font = "500 9px 'DM Sans', sans-serif";
-        ctx.letterSpacing = "2px";
-        ctx.textAlign = "right";
-        ctx.textBaseline = "middle";
-        ctx.fillStyle = `rgba(${r},${g},${b},0.3)`;
-        ctx.fillText(wave.label.toUpperCase(), labelX, labelY);
-        ctx.letterSpacing = "0px";
-      }
-
-      requestAnimationFrame(loop);
-    }
-
-    requestAnimationFrame(loop);
-
-    return () => window.removeEventListener("resize", resize);
-  }, []);
-
+  // --- render ---
   return (
-    <section ref={heroRef} className="relative w-full h-screen overflow-hidden">
-      {/* Depth gradient */}
-      <div className="absolute inset-0 z-0 pointer-events-none"
-        style={{ background: "linear-gradient(to bottom, rgba(12,16,22,0) 0%, rgba(5,7,10,0.5) 60%, rgba(3,4,6,0.9) 100%)" }}
-      />
-
-      <canvas ref={canvasRef} className="absolute inset-0 z-[1]" />
-
-      {/* Content */}
-      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center pointer-events-none">
-        <div className="text-center max-w-[660px] px-6 pointer-events-auto relative">
-          {/* Radial bg for readability */}
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(700px,95vw)] h-[480px] pointer-events-none -z-10"
-            style={{ background: "radial-gradient(ellipse, rgba(8,11,15,0.93) 0%, rgba(8,11,15,0.6) 40%, transparent 68%)" }}
+    <section
+      className="relative min-h-screen"
+      style={{
+        background: showReveal ? "var(--color-bg-reveal)" : "var(--color-bg)",
+        transition: "background 1.5s ease",
+      }}
+    >
+      {/* warm glow behind wordmark */}
+      {showReveal && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div
+            className="glow-pulse"
+            style={{
+              width: "600px",
+              height: "400px",
+              background:
+                "radial-gradient(ellipse at center, rgba(196,149,106,0.06) 0%, transparent 70%)",
+              borderRadius: "50%",
+            }}
           />
+        </div>
+      )}
 
-          <p className="text-[10px] uppercase tracking-[4px] text-[var(--color-warm)] font-medium mb-7 animate-[fadeUp_1.2s_ease-out_0.3s_both]">
-            your second brain on whatsapp
-          </p>
-
-          <h1
-            className="font-normal leading-[1.08] tracking-[-0.02em] text-[var(--color-text-primary)] mb-6 animate-[fadeUp_1.2s_ease-out_0.5s_both]"
-            style={{ fontFamily: "var(--font-serif)", fontSize: "clamp(44px, 6.5vw, 80px)" }}
-          >
-            You forget.<br />
-            <em className="italic text-[var(--color-warm)]">
-              Donna{" "}
-              <span className="cursive-underline">
-                doesn&apos;t.
-                <svg
-                  className="cursive-underline-svg"
-                  viewBox="0 0 300 8"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path
-                    ref={pathRef}
-                    d="M1 4.5C50 2.5 100 6.5 150 4C200 1.5 250 6 299 3.5"
-                    stroke="#C4956A"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    opacity="0.55"
-                  />
-                </svg>
-              </span>
-            </em>
-          </h1>
-
-          <p className="text-[16px] leading-[1.7] text-[var(--color-text-muted)] font-light max-w-[430px] mx-auto mb-10 animate-[fadeUp_1.2s_ease-out_0.7s_both]">
-            You dump 200 thoughts a day into the void. Donna catches every one — and texts you the right one at the right time, without being asked.
-          </p>
-
-          <div className="animate-[fadeUp_1.2s_ease-out_0.9s_both]">
-            <button
-              onClick={openOnboarding}
-              className="bg-[var(--color-warm)] text-[var(--color-bg-dark)] px-9 py-3.5 rounded-full text-[14px] font-medium tracking-[0.01em] hover:-translate-y-0.5 hover:shadow-[0_6px_30px_rgba(196,149,106,0.25)] transition-all cursor-pointer"
+      {/* ---- sequence layer (observation lines) ---- */}
+      <div
+        className="absolute inset-0 flex items-center justify-center"
+        style={{
+          opacity: showReveal ? 0 : 1,
+          transition: "opacity 800ms ease-in-out",
+          pointerEvents: showReveal ? "none" : "auto",
+        }}
+      >
+        <div className="text-center px-6 flex flex-col items-center gap-4 md:gap-5">
+          {lines.slice(0, visibleCount).map((line, i) => (
+            <motion.p
+              key={`line-${i}`}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{
+                opacity: dimmed ? 0.25 : 1,
+                y: 0,
+              }}
+              transition={{
+                opacity: { duration: dimmed ? 0.8 : 0.6, ease: "easeOut" },
+                y: { duration: 0.6, ease: "easeOut" },
+              }}
+              className="text-[17px] md:text-[22px] leading-relaxed font-light"
+              style={{
+                fontFamily: "var(--font-sans)",
+                color: "var(--color-text)",
+              }}
             >
-              Try Donna
-            </button>
-          </div>
+              {line}
+            </motion.p>
+          ))}
+
+          {turnVisible && (
+            <motion.p
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, ease: "easeOut" }}
+              className="text-[22px] md:text-[30px] leading-relaxed italic mt-2"
+              style={{
+                fontFamily: "var(--font-serif)",
+                color: "var(--color-warm)",
+              }}
+            >
+              {turnLine}
+            </motion.p>
+          )}
         </div>
       </div>
+
+      {/* ---- reveal layer (wordmark + CTA) ---- */}
+      <div
+        className="absolute inset-0 flex items-center justify-center"
+        style={{
+          opacity: showReveal ? 1 : 0,
+          transition: "opacity 800ms ease-in-out",
+          pointerEvents: showReveal ? "auto" : "none",
+        }}
+      >
+        <div className="text-center px-6 flex flex-col items-center">
+          {/* turn line echoed at top of reveal */}
+          <p
+            className="text-[22px] md:text-[30px] leading-relaxed italic mb-8 md:mb-12"
+            style={{
+              fontFamily: "var(--font-serif)",
+              color: "var(--color-warm)",
+              opacity: showReveal ? 1 : 0,
+            }}
+          >
+            {turnLine}
+          </p>
+
+          {/* wordmark */}
+          <motion.h1
+            initial={instantReveal ? false : { opacity: 0, y: 12 }}
+            animate={
+              wordmarkVisible ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }
+            }
+            transition={{ duration: 0.8, ease: "easeOut" }}
+            className="text-[40px] md:text-[56px] leading-none tracking-[0.02em] mb-4 md:mb-6"
+            style={{
+              fontFamily: "var(--font-serif)",
+              color: "var(--color-warm)",
+            }}
+          >
+            donna
+          </motion.h1>
+
+          {/* subtext */}
+          <motion.div
+            initial={instantReveal ? false : { opacity: 0, y: 12 }}
+            animate={
+              subtextVisible ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }
+            }
+            transition={{ duration: 0.6, ease: "easeOut" }}
+            className="mb-8 md:mb-10"
+          >
+            <p
+              className="text-[15px] md:text-lg font-light"
+              style={{ color: "var(--color-text-muted)" }}
+            >
+              Your AI assistant on WhatsApp.
+            </p>
+            <p
+              className="text-[15px] md:text-lg font-light"
+              style={{ color: "var(--color-text-muted)" }}
+            >
+              She remembers everything you forget.
+            </p>
+          </motion.div>
+
+          {/* CTA */}
+          <motion.a
+            href="https://wa.me/6583383940"
+            target="_blank"
+            rel="noopener noreferrer"
+            initial={instantReveal ? false : { opacity: 0, y: 12 }}
+            animate={
+              ctaVisible ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }
+            }
+            transition={{ duration: 0.6, ease: "easeOut" }}
+            className="inline-block px-8 py-3.5 rounded-full text-white text-[15px] font-medium
+                       hover:brightness-110 hover:scale-[1.02] transition-all duration-200
+                       w-full sm:w-auto max-w-xs sm:max-w-none text-center"
+            style={{
+              background: "var(--color-green)",
+              fontFamily: "var(--font-sans)",
+            }}
+          >
+            Add Donna on WhatsApp
+          </motion.a>
+        </div>
+      </div>
+
+      {/* ---- skip button ---- */}
+      {skipVisible && !showReveal && (
+        <motion.button
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.3 }}
+          onClick={handleSkip}
+          className="absolute bottom-4 right-4 md:bottom-6 md:right-6 text-xs cursor-pointer
+                     hover:opacity-80 transition-opacity focus:outline-none focus:ring-1
+                     focus:ring-white/20 rounded px-2 py-1"
+          style={{
+            fontFamily: "var(--font-sans)",
+            color: "var(--color-text-dim)",
+          }}
+        >
+          Skip →
+        </motion.button>
+      )}
     </section>
   );
 }

@@ -1,148 +1,46 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { useOnboarding } from "./OnboardingProvider";
+import { motion } from "framer-motion";
 
-export default function Navbar() {
-  const [visible, setVisible] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const openOnboarding = useOnboarding();
+interface NavbarProps {
+  visible: boolean;
+}
 
-  useEffect(() => {
-    const onScroll = () => {
-      setVisible(window.scrollY > window.innerHeight * 0.5);
-    };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  function handleLink() {
-    setMenuOpen(false);
-  }
+export default function Navbar({ visible }: NavbarProps) {
+  if (!visible) return null;
 
   return (
-    <AnimatePresence>
-      {visible && (
-        <motion.nav
-          initial={{ opacity: 0, y: -12 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -12 }}
-          transition={{ duration: 0.4, ease: "easeOut" }}
-          className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] w-[calc(100%-32px)] max-w-fit"
-        >
-          {/* Main pill */}
-          <div
-            className="flex items-center gap-8 px-5 py-2.5 rounded-full border border-white/[0.06]"
-            style={{
-              background: "rgba(12, 14, 20, 0.65)",
-              backdropFilter: "blur(20px)",
-              WebkitBackdropFilter: "blur(20px)",
-            }}
-          >
-            <a
-              href="#"
-              className="text-[18px] text-[var(--color-warm)]"
-              style={{ fontFamily: "var(--font-serif)" }}
-            >
-              donna
-            </a>
+    <motion.nav
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: "easeOut" }}
+      className="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 px-5 py-2.5 rounded-full"
+      style={{
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+        background: "rgba(255,255,255,0.05)",
+        border: "1px solid rgba(255,255,255,0.08)",
+      }}
+    >
+      <span
+        className="text-lg tracking-[0.02em]"
+        style={{ fontFamily: "var(--font-serif)", color: "var(--color-warm)" }}
+      >
+        donna
+      </span>
 
-            {/* Desktop links */}
-            <div className="hidden md:flex items-center gap-6">
-              <a href="#how-donna-works" className="text-[13px] text-white/40 hover:text-white transition-colors whitespace-nowrap">
-                How it works
-              </a>
-              <a href="#trust" className="text-[13px] text-white/40 hover:text-white transition-colors whitespace-nowrap">
-                Security
-              </a>
-              <a href="#pricing" className="text-[13px] text-white/40 hover:text-white transition-colors whitespace-nowrap">
-                Pricing
-              </a>
-              <button
-                onClick={openOnboarding}
-                className="text-[13px] font-medium text-[var(--color-bg-dark)] bg-[var(--color-warm)] px-4 py-1.5 rounded-full hover:opacity-90 transition-opacity whitespace-nowrap cursor-pointer"
-              >
-                Try Donna
-              </button>
-            </div>
-
-            {/* Mobile hamburger */}
-            <button
-              onClick={() => setMenuOpen(!menuOpen)}
-              className="md:hidden flex flex-col gap-[5px] p-1 cursor-pointer"
-              aria-label="Toggle menu"
-            >
-              <span
-                className="block w-[18px] h-[1.5px] bg-[var(--color-text-primary)] transition-transform origin-center"
-                style={{
-                  transform: menuOpen
-                    ? "rotate(45deg) translate(2px, 2px)"
-                    : "none",
-                }}
-              />
-              <span
-                className="block w-[18px] h-[1.5px] bg-[var(--color-text-primary)] transition-opacity"
-                style={{ opacity: menuOpen ? 0 : 1 }}
-              />
-              <span
-                className="block w-[18px] h-[1.5px] bg-[var(--color-text-primary)] transition-transform origin-center"
-                style={{
-                  transform: menuOpen
-                    ? "rotate(-45deg) translate(2px, -2px)"
-                    : "none",
-                }}
-              />
-            </button>
-          </div>
-
-          {/* Mobile dropdown */}
-          <AnimatePresence>
-            {menuOpen && (
-              <motion.div
-                initial={{ opacity: 0, y: -8, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -8, scale: 0.95 }}
-                transition={{ duration: 0.2, ease: "easeOut" }}
-                className="md:hidden mt-2 rounded-2xl border border-white/[0.06] p-5 flex flex-col gap-4"
-                style={{
-                  background: "rgba(12, 14, 20, 0.85)",
-                  backdropFilter: "blur(20px)",
-                  WebkitBackdropFilter: "blur(20px)",
-                }}
-              >
-                <a
-                  href="#how-donna-works"
-                  onClick={handleLink}
-                  className="text-[15px] text-white/50 hover:text-white transition-colors"
-                >
-                  How it works
-                </a>
-                <a
-                  href="#trust"
-                  onClick={handleLink}
-                  className="text-[15px] text-white/50 hover:text-white transition-colors"
-                >
-                  Security
-                </a>
-                <a
-                  href="#pricing"
-                  onClick={handleLink}
-                  className="text-[15px] text-white/50 hover:text-white transition-colors"
-                >
-                  Pricing
-                </a>
-                <button
-                  onClick={() => { handleLink(); openOnboarding(); }}
-                  className="text-[14px] font-medium text-[var(--color-bg-dark)] bg-[var(--color-warm)] px-5 py-2.5 rounded-full text-center hover:opacity-90 transition-opacity cursor-pointer w-full"
-                >
-                  Try Donna
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.nav>
-      )}
-    </AnimatePresence>
+      <a
+        href="https://wa.me/6583383940"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-sm px-4 py-1.5 rounded-full text-white font-medium hover:brightness-110 transition-all"
+        style={{
+          background: "var(--color-green)",
+          fontFamily: "var(--font-sans)",
+        }}
+      >
+        Add on WhatsApp
+      </a>
+    </motion.nav>
   );
 }

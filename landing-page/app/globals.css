@@ -1,56 +1,37 @@
 @import "tailwindcss";
 
-@theme {
-  --color-bg-dark: #080B0F;
+:root {
+  --color-bg: #000000;
+  --color-bg-reveal: #0a0a0f;
+  --color-text: #F2EDE7;
+  --color-text-muted: rgba(242, 237, 231, 0.5);
+  --color-text-dim: rgba(242, 237, 231, 0.2);
   --color-warm: #C4956A;
-  --color-text-primary: #F2EDE7;
-  --color-text-muted: rgba(242, 237, 231, 0.35);
-  --color-text-dim: rgba(242, 237, 231, 0.15);
+  --color-warm-glow: rgba(196, 149, 106, 0.06);
+  --color-green: #25D366;
   --font-serif: 'Instrument Serif', serif;
   --font-sans: 'DM Sans', sans-serif;
 }
 
-@layer base {
-  html { scroll-behavior: auto; }
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
 
-  body {
-    background: var(--color-bg-dark);
-    color: var(--color-text-primary);
-    font-family: var(--font-sans);
-    overflow-x: hidden;
-  }
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
 
-  /* Grain overlay */
-  .grain {
-    position: fixed;
-    inset: 0;
-    z-index: 50;
-    pointer-events: none;
-    opacity: 0.03;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
-    background-size: 256px 256px;
-  }
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.04; }
+  50% { opacity: 0.08; }
+}
 
-  /* Cursive underline SVG */
-  .cursive-underline {
-    position: relative;
-    display: inline-block;
-  }
-
-  .cursive-underline-svg {
-    position: absolute;
-    bottom: -2px;
-    left: -4px;
-    width: calc(100% + 8px);
-    height: auto;
-    pointer-events: none;
-    overflow: visible;
-  }
-
-  /* stroke-dasharray/dashoffset driven by scroll in Hero.tsx */
-
-  @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
+.glow-pulse {
+  animation: glow-pulse 4s ease-in-out infinite;
 }

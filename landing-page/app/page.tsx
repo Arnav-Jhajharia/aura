@@ -1,26 +1,18 @@
-import Navbar from "@/components/Navbar";
+"use client";
+
+import { useState } from "react";
 import Hero from "@/components/Hero";
-import DonnaTextsFirst from "@/components/DonnaTextsFirst";
-import HowDonnaWorks from "@/components/HowDonnaWorks";
-import Trust from "@/components/Trust";
-import Pricing from "@/components/Pricing";
-import FAQ from "@/components/FAQ";
-import FinalCTA from "@/components/FinalCTA";
-import Footer from "@/components/Footer";
-import OnboardingProvider from "@/components/OnboardingProvider";
+import Navbar from "@/components/Navbar";
+import RestOfPage from "@/components/RestOfPage";
 
 export default function Home() {
+  const [heroComplete, setHeroComplete] = useState(false);
+
   return (
-    <OnboardingProvider>
-      <Navbar />
-      <Hero />
-      <DonnaTextsFirst />
-      <HowDonnaWorks />
-      <Trust />
-      <Pricing />
-      <FAQ />
-      <FinalCTA />
-      <Footer />
-    </OnboardingProvider>
+    <>
+      <Navbar visible={heroComplete} />
+      <Hero onComplete={() => setHeroComplete(true)} />
+      <RestOfPage />
+    </>
   );
 }
