@@ -80,7 +80,7 @@ def route_after_ingress(state: AuraState) -> str:
 def route_planner(state: AuraState) -> str:
     """Planner decides: call a tool and loop back, or hand off to composer."""
     action = state.get("_planner_action", "done")
-    if action == "call_tool":
+    if action in ("call_tool", "call_tools"):
         return "tool_executor"
     return "response_composer"
 
@@ -200,7 +200,9 @@ async def process_message(
         "_planner_action": None,
         "_next_tool": None,
         "_next_tool_args": None,
+        "_next_tools": None,
         "_planner_iterations": 0,
+        "_pending_flow": None,
     }
 
     config = {"configurable": {"thread_id": phone}}

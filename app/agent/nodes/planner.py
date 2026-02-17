@@ -1,13 +1,15 @@
 """ReAct-style planner node for the Aura agent graph.
 
 Instead of the classifier predicting all tools upfront, the planner
-iteratively decides what information it needs, calls one tool at a time,
-observes the result, and decides whether to call another tool or hand off
-to the composer.  Maximum 3 iterations to bound latency and cost.
+iteratively decides what information it needs, calls one (or multiple
+parallel) tools at a time, observes the result, and decides whether to
+call another tool or hand off to the composer.  Maximum 5 iterations.
 """
 
 import json
 import logging
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -17,14 +19,17 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
-MAX_ITERATIONS = 3
+MAX_ITERATIONS = 5
 
 PLANNER_PROMPT = """You are Donna's reasoning engine. You have the user's message, \
 their intent, extracted entities, and conversation history.
 
+Current date/time: {current_datetime}
+
 Decide your next action:
-1. {{"action": "call_tool", "tool": "tool_name", "args": {{...}}}} — if you need information
-2. {{"action": "done"}} — if you have enough to compose a response
+1. {{"action": "call_tool", "tool": "tool_name", "args": {{...}}}} — call a single tool
+2. {{"action": "call_tools", "tools": [{{"tool": "...", "args": {{...}}}}, ...]}} — call multiple independent tools in parallel
+3. {{"action": "done"}} — if you have enough to compose a response
 
 What you know so far:
 {accumulated_tool_results}
@@ -90,6 +95,11 @@ Rules:
 something from the past that isn't in the immediate context.
 - recall_context gives you structured DB data (tasks, moods, expenses, deadlines). \
 Use it when the user asks about their tasks, mood trends, spending, or upcoming deadlines.
+- When you need multiple INDEPENDENT pieces of information (e.g. assignments AND calendar), \
+use call_tools to fetch them in parallel instead of calling them one at a time.
+- If a tool returned an error about an expired or missing integration, do NOT retry it. \
+Instead, go to done — the composer will suggest reconnecting.
+- Use the current date/time to compute relative dates: "tomorrow", "this Friday", "next week".
 
 Return ONLY valid JSON. No markdown, no explanation."""
 
@@ -104,49 +114,69 @@ _NO_TOOL_INTENTS = {"thought", "vent", "info_dump", "reflection", "capabilities"
 _KEYWORD_ROUTES: list[tuple[list[str], str, str | None, dict]] = [
     # Canvas — courses
     (["my courses", "my modules", "am i taking", "am i enrolled", "what courses",
-      "which courses", "course list", "enrolled in", "taking this sem"],
+      "which courses", "course list", "enrolled in", "taking this sem",
+      "what modules", "which modules"],
      "canvas_courses", "canvas", {}),
-    # Canvas — assignments
+    # Canvas — assignments (expanded)
     (["assignment", "assignments", "what's due", "whats due", "due date", "due this",
-      "deadline", "deadlines", "upcoming due"],
+      "deadline", "deadlines", "upcoming due", "homework", "hw",
+      "what do i have due", "anything due", "submissions due"],
      "canvas_assignments", "canvas", {}),
-    # Canvas — grades
-    (["grade", "grades", "marks", "score", "scores", "gpa", "results"],
+    # Canvas — grades (expanded)
+    (["grade", "grades", "marks", "score", "scores", "gpa", "results",
+      "how did i do", "my marks", "my results"],
      "canvas_grades", "canvas", {}),
-    # Canvas — announcements
+    # Canvas — announcements (expanded)
     (["announcement", "announcements", "course news", "course updates", "prof said",
-      "professor posted", "lecturer posted"],
+      "professor posted", "lecturer posted", "prof posted", "any news",
+      "course announcement"],
      "canvas_announcements", "canvas", {}),
-    # Canvas — submission status
+    # Canvas — submission status (expanded)
     (["did i submit", "have i submitted", "submission status", "haven't submitted",
-      "not submitted", "missing submission"],
+      "not submitted", "missing submission", "what haven't i submitted",
+      "unsubmitted"],
      "canvas_submission_status", "canvas", {}),
-    # Calendar — view
+    # Calendar — view (expanded)
     (["calendar", "schedule", "events today", "events this", "what's on", "whats on",
-      "busy today", "busy this"],
+      "busy today", "busy this", "what do i have today", "what do i have tomorrow",
+      "what do i have this week", "any meetings", "my meetings", "my events",
+      "what's happening", "whats happening", "lectures today", "tutorial today",
+      "class today", "classes today", "classes tomorrow"],
      "get_calendar_events", None, {}),
-    # Calendar — free slots
+    # Calendar — free slots (expanded)
     (["free today", "free this", "when am i free", "free slot", "free time",
-      "available time", "find time"],
+      "available time", "find time", "am i free", "do i have time",
+      "any free time", "open slots"],
      "find_free_slots", None, {}),
-    # Email — list
-    (["email", "emails", "inbox", "mail", "unread"],
+    # Email — list (expanded)
+    (["email", "emails", "inbox", "mail", "unread", "check email",
+      "any emails", "new emails", "my inbox", "check my email"],
      "get_emails", None, {}),
-    # NUSMods
-    (["nusmods.com/timetable", "nusmods url", "sync timetable", "sync nusmods"],
+    # NUSMods (expanded)
+    (["nusmods.com/timetable", "nusmods url", "sync timetable", "sync nusmods",
+      "import timetable", "nusmods link"],
      "sync_nusmods_to_calendar", None, {}),
-    # Tasks
-    (["my tasks", "pending tasks", "task list", "to do", "todo", "to-do"],
+    # Tasks — view (expanded)
+    (["my tasks", "pending tasks", "task list", "to do", "todo", "to-do",
+      "what do i need to do", "my to-do", "show tasks"],
      "get_tasks", None, {}),
-    # Mood
-    (["mood history", "mood trend", "how have i been", "mood log"],
+    # Mood (expanded)
+    (["mood history", "mood trend", "how have i been", "mood log",
+      "mood tracker", "my mood", "mood lately"],
      "get_mood_history", None, {"days": 7}),
-    # Expenses
-    (["spending", "expenses", "how much have i spent", "expense summary"],
+    # Expenses (expanded)
+    (["spending", "expenses", "how much have i spent", "expense summary",
+      "my spending", "money spent", "budget", "spending summary",
+      "how much did i spend"],
      "get_expense_summary", None, {"days": 7}),
     # Voice notes
-    (["voice note", "voice notes", "what did i say", "my recordings"],
+    (["voice note", "voice notes", "what did i say", "my recordings",
+      "voice memo", "voice memos"],
      "search_voice_notes", None, {}),
+    # Memory — recall (expanded)
+    (["remember when", "what did i tell you about", "what do you know about",
+      "do you remember", "i mentioned", "i told you"],
+     "search_memory", None, {}),
 ]
 
 
@@ -165,8 +195,22 @@ def _deterministic_route(text: str, connected: list[str]) -> tuple[str, dict] | 
                         "update_calendar_event", "sync_nusmods_to_calendar"):
                 if "google" not in connected and "microsoft" not in connected:
                     continue
-            return (tool, args)
+            # Dynamic args for search_memory
+            actual_args = dict(args)
+            if tool == "search_memory":
+                actual_args["query"] = text
+            return (tool, actual_args)
     return None
+
+
+def _format_user_datetime(tz_name: str) -> str:
+    """Format current date/time in the user's timezone."""
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("UTC")
+    now = datetime.now(tz)
+    return now.strftime("%A, %B %d, %Y at %I:%M %p") + f" ({tz_name})"
 
 
 async def planner(state: AuraState) -> dict:
@@ -174,20 +218,19 @@ async def planner(state: AuraState) -> dict:
     text = state.get("transcription") or state["raw_input"]
     intent = state.get("intent", "thought")
     tool_results = state.get("tool_results", [])
-    history = state.get("user_context", {}).get("conversation_history", [])[-6:]
+    history = state.get("user_context", {}).get("conversation_history", [])[-10:]
     iterations = state.get("_planner_iterations", 0)
     connected = state.get("user_context", {}).get("connected_integrations", [])
+    pending_flow = state.get("_pending_flow")
 
     # Fast-path: thoughts, vents, info_dumps, reflections skip tools entirely
     # (unless we already have tool results from a previous iteration, meaning
     # the planner previously decided it needed tools)
-    if intent in _NO_TOOL_INTENTS and not tool_results:
+    if intent in _NO_TOOL_INTENTS and not tool_results and not pending_flow:
         return {"_planner_action": "done", "_planner_iterations": iterations}
 
     # ── Deterministic routing (iteration 0 only) ─────────────────────────
-    # On the first pass, check for obvious keyword matches before asking the LLM.
-    # This guarantees Canvas/calendar/email tools fire when the user clearly wants them.
-    if iterations == 0:
+    if iterations == 0 and not pending_flow:
         route = _deterministic_route(text, connected)
         if route:
             tool_name, tool_args = route
@@ -204,7 +247,7 @@ async def planner(state: AuraState) -> dict:
         logger.info("Planner hit max iterations (%d), handing off to composer", MAX_ITERATIONS)
         return {"_planner_action": "done", "_planner_iterations": iterations}
 
-    # Build context for the LLM
+    # ── Build context for the LLM ────────────────────────────────────────
     results_summary = (
         json.dumps(tool_results, indent=2, default=str) if tool_results else "None yet."
     )
@@ -219,23 +262,69 @@ async def planner(state: AuraState) -> dict:
 
     entities = state.get("entities", {})
     profile = state.get("user_context", {}).get("user_profile", {})
+    memory_facts = state.get("user_context", {}).get("memory_facts", [])
+    user_entities = state.get("user_context", {}).get("user_entities", {})
+    conversation_summary = state.get("user_context", {}).get("conversation_summary", "")
 
-    user_block = (
+    # Format current datetime in user's timezone
+    tz_name = state.get("user_context", {}).get("timezone", "UTC")
+    current_dt = _format_user_datetime(tz_name)
+
+    user_block_parts = []
+
+    # Conversation summary (compressed older history)
+    if conversation_summary:
+        user_block_parts.append(f"Conversation summary (older context):\n{conversation_summary}")
+
+    if history_text:
+        user_block_parts.append(f"Recent conversation:\n{history_text}")
+
+    # Memory facts (what Donna knows about this user)
+    if memory_facts:
+        facts_lines = "\n".join(
+            f"- [{f.get('category', '?')}] {f['fact']}"
+            for f in memory_facts[:10]
+        )
+        user_block_parts.append(f"What you remember about this user:\n{facts_lines}")
+
+    # Known entities (people, places, etc.)
+    if user_entities:
+        entity_parts = []
+        for etype in ("people", "places", "recent"):
+            items = user_entities.get(etype, [])
+            if items:
+                names = ", ".join(e.get("name", "?") for e in items[:5])
+                entity_parts.append(f"  {etype}: {names}")
+        if entity_parts:
+            user_block_parts.append("Known entities:\n" + "\n".join(entity_parts))
+
+    # Pending flow (multi-turn context)
+    if pending_flow:
+        user_block_parts.append(
+            f"PENDING FLOW: There is an ongoing multi-turn interaction.\n"
+            f"Flow type: {pending_flow.get('type', 'unknown')}\n"
+            f"Context: {json.dumps(pending_flow.get('context', {}), default=str)}\n"
+            f"Awaiting: {pending_flow.get('awaiting', 'unknown')}\n"
+            f"The user's current message is likely a response to this flow. "
+            f"Interpret it accordingly."
+        )
+
+    user_block_parts.append(
         f"User message: {text}\n"
         f"Intent: {intent}\n"
         f"Entities: {json.dumps(entities, default=str)}"
     )
     if profile:
-        user_block += f"\nUser profile: {json.dumps(profile, default=str)}"
-    if history_text:
-        user_block = f"Conversation history:\n{history_text}\n\n{user_block}"
+        user_block_parts.append(f"User profile: {json.dumps(profile, default=str)}")
 
-    connected = state.get("user_context", {}).get("connected_integrations", [])
+    user_block = "\n\n".join(user_block_parts)
+
     prompt = PLANNER_PROMPT.format(
         accumulated_tool_results=results_summary,
         connected_integrations=", ".join(connected) if connected else "none",
         max_iterations=MAX_ITERATIONS,
         iterations_used=iterations,
+        current_datetime=current_dt,
     )
 
     response = await llm.ainvoke([
@@ -251,15 +340,42 @@ async def planner(state: AuraState) -> dict:
 
     action = parsed.get("action", "done")
 
+    # Single tool call
     if action == "call_tool":
         tool_name = parsed.get("tool", "")
         tool_args = parsed.get("args", {})
         logger.info("Planner iteration %d: calling %s(%s)", iterations + 1, tool_name, tool_args)
-        return {
+        result: dict = {
             "_planner_action": "call_tool",
             "_next_tool": tool_name,
             "_next_tool_args": tool_args,
             "_planner_iterations": iterations + 1,
         }
+        # Planner can set a pending flow for multi-turn interactions
+        if "pending_flow" in parsed:
+            result["_pending_flow"] = parsed["pending_flow"]
+        return result
 
-    return {"_planner_action": "done", "_planner_iterations": iterations}
+    # Parallel tool calls
+    if action == "call_tools":
+        tools_list = parsed.get("tools", [])
+        if tools_list:
+            logger.info(
+                "Planner iteration %d: parallel calling %s",
+                iterations + 1,
+                [t.get("tool") for t in tools_list],
+            )
+            result = {
+                "_planner_action": "call_tools",
+                "_next_tools": tools_list,
+                "_planner_iterations": iterations + len(tools_list),
+            }
+            if "pending_flow" in parsed:
+                result["_pending_flow"] = parsed["pending_flow"]
+            return result
+
+    # Done
+    result = {"_planner_action": "done", "_planner_iterations": iterations}
+    if "pending_flow" in parsed:
+        result["_pending_flow"] = parsed["pending_flow"]
+    return result

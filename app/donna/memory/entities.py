@@ -35,7 +35,7 @@ Rules:
 
 Return ONLY a JSON array. No markdown, no explanation."""
 
-llm = ChatOpenAI(model="gpt-4o", api_key=settings.openai_api_key, temperature=0)
+llm = ChatOpenAI(model="gpt-4o-mini", api_key=settings.openai_api_key, temperature=0)
 
 
 async def extract_entities(user_id: str, message: str) -> list[dict]:

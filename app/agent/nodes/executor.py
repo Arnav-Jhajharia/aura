@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from agent.state import AuraState
@@ -53,56 +54,89 @@ TOOL_REGISTRY: dict[str, callable] = {
     "recall_context": recall_context,
 }
 
+# Errors that are transient and worth retrying once
+_TRANSIENT_ERRORS = ("timeout", "rate limit", "429", "503", "502", "connection")
+
+
+def _is_transient(error_str: str) -> bool:
+    lower = error_str.lower()
+    return any(t in lower for t in _TRANSIENT_ERRORS)
+
+
+async def _execute_one(
+    tool_name: str, user_id: str, entities: dict, tool_args: dict
+) -> dict:
+    """Execute a single tool with retry on transient errors."""
+    tool_fn = TOOL_REGISTRY.get(tool_name)
+    if tool_fn is None:
+        logger.warning("Unknown tool requested: %s", tool_name)
+        return {"tool": tool_name, "error": "unknown tool"}
+
+    for attempt in range(2):  # max 1 retry
+        try:
+            result = await tool_fn(user_id=user_id, entities=entities, **tool_args)
+            return {"tool": tool_name, "result": result}
+        except Exception as e:
+            error_str = str(e)
+            if attempt == 0 and _is_transient(error_str):
+                logger.info("Transient error on %s, retrying once: %s", tool_name, error_str)
+                await asyncio.sleep(1)
+                continue
+            logger.exception("Tool %s failed", tool_name)
+            return {"tool": tool_name, "error": error_str}
+
+    # Should not reach here, but just in case
+    return {"tool": tool_name, "error": "max retries exceeded"}
+
 
 async def tool_executor(state: AuraState) -> dict:
-    """Execute tools — either a single tool from the planner or a batch from tools_needed.
+    """Execute tools — single, parallel, or batch from tools_needed.
 
-    In planner mode (_next_tool is set): execute one tool, append result to
-    tool_results, and return.  The planner loop will decide what to do next.
-
+    In planner mode:
+    - _next_tool: execute one tool
+    - _next_tools: execute multiple tools in parallel
     Legacy mode (tools_needed list): iterate through all requested tools.
     """
     user_id = state["user_id"]
     entities = state.get("entities", {})
     results = list(state.get("tool_results", []))
 
-    # ── Planner-driven single-tool execution ──────────────────────────
+    # ── Parallel tool execution (call_tools) ─────────────────────────────
+    next_tools = state.get("_next_tools")
+    if next_tools:
+        tasks = []
+        for t in next_tools:
+            name = t.get("tool", "")
+            args = t.get("args", {})
+            tasks.append(_execute_one(name, user_id, entities, args))
+
+        parallel_results = await asyncio.gather(*tasks)
+        results.extend(parallel_results)
+
+        return {
+            "tool_results": results,
+            "_next_tool": None,
+            "_next_tool_args": None,
+            "_next_tools": None,
+        }
+
+    # ── Planner-driven single-tool execution ─────────────────────────────
     next_tool = state.get("_next_tool")
     if next_tool:
-        tool_fn = TOOL_REGISTRY.get(next_tool)
-        if tool_fn is None:
-            logger.warning("Planner requested unknown tool: %s", next_tool)
-            results.append({"tool": next_tool, "error": "unknown tool"})
-        else:
-            tool_args = state.get("_next_tool_args") or {}
-            try:
-                result = await tool_fn(user_id=user_id, entities=entities, **tool_args)
-                results.append({"tool": next_tool, "result": result})
-            except Exception as e:
-                logger.exception("Tool %s failed", next_tool)
-                results.append({"tool": next_tool, "error": str(e)})
+        tool_args = state.get("_next_tool_args") or {}
+        result = await _execute_one(next_tool, user_id, entities, tool_args)
+        results.append(result)
 
-        # Clear the single-tool directive so the planner can issue a new one
         return {
             "tool_results": results,
             "_next_tool": None,
             "_next_tool_args": None,
         }
 
-    # ── Legacy batch execution (tools_needed from classifier) ─────────
+    # ── Legacy batch execution (tools_needed from classifier) ────────────
     tools_needed = state.get("tools_needed", [])
     for tool_name in tools_needed:
-        tool_fn = TOOL_REGISTRY.get(tool_name)
-        if tool_fn is None:
-            logger.warning("Unknown tool requested: %s", tool_name)
-            results.append({"tool": tool_name, "error": "unknown tool"})
-            continue
-
-        try:
-            result = await tool_fn(user_id=user_id, entities=entities)
-            results.append({"tool": tool_name, "result": result})
-        except Exception as e:
-            logger.exception("Tool %s failed", tool_name)
-            results.append({"tool": tool_name, "error": str(e)})
+        result = await _execute_one(tool_name, user_id, entities, {})
+        results.append(result)
 
     return {"tool_results": results}

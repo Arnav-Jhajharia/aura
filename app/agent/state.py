@@ -36,10 +36,12 @@ class AuraState(TypedDict):
     memory_updates: list[dict]  # new facts to persist about the user
 
     # Planner (internal)
-    _planner_action: Optional[str]       # "call_tool" | "done"
+    _planner_action: Optional[str]       # "call_tool" | "call_tools" | "done"
     _next_tool: Optional[str]            # single tool name for planner-driven execution
     _next_tool_args: Optional[dict]      # args for _next_tool
-    _planner_iterations: int             # ReAct loop counter (max 3)
+    _next_tools: Optional[list]          # parallel tools: [{"tool": str, "args": dict}, ...]
+    _planner_iterations: int             # ReAct loop counter (max 5)
+    _pending_flow: Optional[dict]        # multi-turn flow: {"type": str, "context": dict, "awaiting": str, "expires_at": str}
 
     # Routing (internal)
     handoff_to_main: Optional[bool]  # token_collector → intent_classifier when user says something else

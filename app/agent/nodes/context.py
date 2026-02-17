@@ -29,13 +29,14 @@ async def thin_context_loader(state: AuraState) -> dict:
     # Preserve fields already set by ingress (timezone, prefs, conversation_history)
     context = {**state.get("user_context", {})}
 
-    # Unified user snapshot (profile + behaviors)
+    # Unified user snapshot (profile + behaviors + entities)
     try:
         snapshot = await get_user_snapshot(user_id)
         if snapshot:
             context["user_profile"] = snapshot.get("profile", {})
             context["user_behaviors"] = snapshot.get("behaviors", {})
             context["memory_facts"] = snapshot.get("memory_facts", [])
+            context["user_entities"] = snapshot.get("entities", {})
     except Exception:
         logger.exception("Failed to load user snapshot for %s", user_id)
 

@@ -46,7 +46,7 @@ Intent definitions:
 
 KEY DISTINCTION: "thought" means the user is chatting and expects a reply. "info_dump" means they're giving you information to remember — they just want a thumbs up, not a conversation."""
 
-llm = ChatOpenAI(model="gpt-4o", api_key=settings.openai_api_key)
+llm = ChatOpenAI(model="gpt-4o-mini", api_key=settings.openai_api_key)
 
 
 def classify_type(state: AuraState) -> dict:

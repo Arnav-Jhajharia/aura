@@ -45,6 +45,12 @@ class User(Base):
     has_microsoft = Column(Boolean, default=False)
     nusmods_imported = Column(Boolean, default=False)
 
+    # Multi-turn flow state (persisted between messages)
+    pending_flow_json = Column(JSON, nullable=True)
+    # Conversation summary (compressed history)
+    conversation_summary = Column(Text, nullable=True)
+    conversation_summary_message_count = Column(Integer, default=0)
+
     # Activity stats
     total_messages = Column(Integer, default=0)
     proactive_engagement_rate = Column(Float, nullable=True)

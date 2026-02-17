@@ -1,10 +1,13 @@
 import json
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from agent.discovery import pick_discovery_hint
+from agent.result_formatter import format_tool_results
 from agent.state import AuraState
 from config import settings
 from donna.voice import (
@@ -34,9 +37,24 @@ Matching energy:
 
 CRITICAL: connected_integrations in user context is ground truth. Only say Canvas/Google are connected if they appear there. If not connected, never claim otherwise.
 
-For connection help: Google → include the google_connection_url directly. Canvas → use canvas_connection_instructions exactly."""
+For connection help: Google → include the google_connection_url directly. Canvas → use canvas_connection_instructions exactly.
+
+ERROR HANDLING: If a tool returned an error about an expired or missing integration, don't say "something went wrong." Instead, tell the user specifically what happened and how to fix it:
+- Expired Canvas token → "Your Canvas connection expired — want me to walk you through reconnecting?"
+- Google/Microsoft auth error → "Looks like your Google connection needs to be refreshed. Tap Connect Google to fix it."
+- Other errors → Be honest but brief. Don't panic the user."""
 
 llm = ChatOpenAI(model="gpt-4o", api_key=settings.openai_api_key)
+
+
+def _format_user_datetime(tz_name: str) -> str:
+    """Format current date/time in the user's timezone."""
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("UTC")
+    now = datetime.now(tz)
+    return now.strftime("%A, %B %d, %Y at %I:%M %p") + f" ({tz_name})"
 
 
 def _build_composer_system(context: dict) -> str:
@@ -56,26 +74,19 @@ def _build_composer_system(context: dict) -> str:
 
 
 async def _handle_capabilities(state: AuraState, context: dict) -> dict:
-    """Generate a capabilities response — short, confident, not a menu.
-
-    Donna doesn't list features. She tells you to try her.
-    """
+    """Generate a capabilities response — short, confident, not a menu."""
     connected = context.get("connected_integrations", [])
-
-    # Short and confident — not a feature dump
     response = "Just talk to me. Tasks, deadlines, expenses, mood, emails — whatever you need."
-
     if not connected:
         response += "\n\nConnect your accounts and I get a lot better."
-
     return {"response": response}
 
 
 async def response_composer(state: AuraState) -> dict:
-    """Generate a natural WhatsApp response using Claude.
+    """Generate a natural WhatsApp response using the LLM.
 
-    Combines user message, intent, context, and tool results into a prompt,
-    then generates a conversational response formatted for WhatsApp.
+    Combines user message, intent, context, and formatted tool results
+    into a prompt, then generates a conversational response.
     """
     user_id = state["user_id"]
     text = state.get("transcription") or state["raw_input"]
@@ -84,11 +95,10 @@ async def response_composer(state: AuraState) -> dict:
     tool_results = state.get("tool_results", [])
 
     # Info dump — user is dropping facts, not asking for a reply.
-    # Just react with 👍 and let memory_writer store the info.
     if intent == "info_dump":
         return {"response": "", "reaction_emoji": "\U0001f44d"}
 
-    # ── Capabilities: self-aware, integration-aware response ──────────
+    # Capabilities: self-aware, integration-aware response
     if intent == "capabilities":
         return await _handle_capabilities(state, context)
 
@@ -96,8 +106,14 @@ async def response_composer(state: AuraState) -> dict:
     history = context.pop("conversation_history", [])
     memory_facts = context.pop("memory_facts", [])
     deferred_insights = context.pop("deferred_insights", [])
+    context.pop("conversation_summary", None)
+    context.pop("user_entities", None)
 
-    parts = []
+    # Current date/time for temporal awareness
+    tz_name = context.get("timezone", "UTC")
+    current_dt = _format_user_datetime(tz_name)
+
+    parts = [f"Current date/time: {current_dt}"]
 
     if memory_facts:
         facts_block = "\n".join(f"- [{f['category']}] {f['fact']}" for f in memory_facts)
@@ -111,7 +127,7 @@ async def response_composer(state: AuraState) -> dict:
 
     if history:
         lines = []
-        for msg in history:
+        for msg in history[-10:]:
             prefix = "User" if msg["role"] == "user" else "Donna"
             lines.append(f"{prefix}: {msg['content']}")
         parts.append("Recent conversation:\n" + "\n".join(lines))
@@ -119,11 +135,15 @@ async def response_composer(state: AuraState) -> dict:
     parts.append(f"User message: {text}")
     parts.append(f"Intent: {intent}")
     parts.append(f"User context:\n{json.dumps(context, indent=2, default=str)}")
-    parts.append(f"Tool results:\n{json.dumps(tool_results, indent=2, default=str)}")
 
-    # ── Discovery hint (tool-triggered only) ──────────────────────────
-    # If a tool was just used and there's a relevant feature the user
-    # hasn't seen, give the LLM a hint to weave in naturally.
+    # Format tool results as readable text instead of raw JSON
+    if tool_results:
+        formatted_results = format_tool_results(tool_results, user_message=text)
+        parts.append(f"Tool results:\n{formatted_results}")
+    else:
+        parts.append("Tool results: None")
+
+    # Discovery hint (tool-triggered only)
     try:
         connected = context.get("connected_integrations", [])
         hint = await pick_discovery_hint(user_id, intent, tool_results, connected)
@@ -138,7 +158,6 @@ async def response_composer(state: AuraState) -> dict:
     parts.append("Compose a response for the user.")
 
     user_prompt = "\n\n".join(parts)
-
     system = _build_composer_system(context)
 
     response = await llm.ainvoke([
